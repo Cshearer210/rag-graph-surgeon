@@ -46,6 +46,21 @@ class GraphTest(unittest.TestCase):
         self.assertNotIn("app/used.py", g.orphans)   # used.py IS imported by main
         self.assertEqual(g.exit_code(), 1)
 
+    def test_examples_and_changelog_do_not_cry_wolf(self):
+        # example scripts are entry points (never imported) and a CHANGELOG describes past state --
+        # neither is a finding, but a real dead module still is
+        build(self.d, {
+            "pkg/__init__.py": "", "pkg/core.py": "VALUE = 1\n",
+            "examples/demo.py": "from pkg import core\n",
+            "realdead.py": "def x(): return 1\n",
+            "CHANGELOG.md": "the old banner lived at assets/social-card.png\n",
+        })
+        g = build_graph(self.d)
+        names = {__import__("os").path.basename(o) for o in g.orphans}
+        self.assertNotIn("demo.py", names)      # example not flagged
+        self.assertIn("realdead.py", names)     # real dead code still caught
+        self.assertFalse(any("social-card" in t for _, t in g.dangling))
+
     def test_broken_submodule_import_is_found(self):
         # from pkg import x, but pkg/x.py is gone and x is not defined in pkg/__init__.py
         # -> a moved/deleted module the caller never updated (reads like a memory bug)

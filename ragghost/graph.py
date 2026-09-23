@@ -71,6 +71,11 @@ class Graph:
                 continue
             if base.startswith("test_") or "/tests/" in n or n.startswith("tests/"):
                 continue
+            # example scripts and doc snippets are entry points by nature -- nobody imports them,
+            # and flagging them is the crying-wolf this tool refuses.
+            if n.startswith("examples/") or "/examples/" in n \
+                    or n.startswith("docs/") or "/docs/" in n:
+                continue
             out.append(n)
         return out
 
@@ -254,6 +259,12 @@ def _dangling_refs(g, skip):
             continue
         base_n = os.path.basename(n)
         if base_n.startswith("test_") or "/tests/" in n or n.startswith("tests/"):
+            continue
+        # a history document DESCRIBES past states, so a path in it is a record, not live wiring;
+        # example code references example paths. Neither is a move nobody updated.
+        if base_n.upper().split(".")[0] in ("CHANGELOG", "HISTORY", "NEWS", "RELEASES",
+                                            "RELEASE-NOTES", "CHANGES") \
+                or n.startswith("examples/") or "/examples/" in n:
             continue
         ap = os.path.join(g.root, n)
         try:
