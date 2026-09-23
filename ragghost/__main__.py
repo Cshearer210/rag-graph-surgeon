@@ -7,11 +7,13 @@ import sys
 
 from .scan import scan
 from .graph import build_graph
+from .organize import organize
 
 USAGE = """rag-ghost -- point it at a system and find out what is actually there
 
   python3 -m ragghost scan <path>       stage 1: discover everything, counted twice
   python3 -m ragghost graph <path>      stage 2: what is wired to what, both directions
+  python3 -m ragghost organize <path>   stage 3: tiered index; what is load-bearing vs movable
 
 Exit codes, and they are the point:
   0   it looked, and everything checks out
@@ -22,6 +24,7 @@ Exit codes, and they are the point:
 STAGES = {
     "scan": lambda path: scan(path),
     "graph": lambda path: build_graph(path),
+    "organize": lambda path: organize(path),
 }
 
 

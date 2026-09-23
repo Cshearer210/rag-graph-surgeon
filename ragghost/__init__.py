@@ -7,6 +7,7 @@ place status is claimed.
 """
 from .scan import KINDS, Result, scan
 from .graph import Graph, build_graph
+from .organize import Index, organize
 
-__all__ = ["scan", "Result", "KINDS", "build_graph", "Graph", "__version__"]
+__all__ = ["scan", "Result", "KINDS", "build_graph", "Graph", "organize", "Index", "__version__"]
 __version__ = "0.1.0"
