@@ -9,6 +9,7 @@ from .scan import scan
 from .graph import build_graph
 from .organize import organize
 from .retrieve import build_index
+from .harness import harnesses
 
 USAGE = """rag-ghost -- point it at a system and find out what is actually there
 
@@ -16,6 +17,7 @@ USAGE = """rag-ghost -- point it at a system and find out what is actually there
   python3 -m ragghost graph <path>      stage 2: what is wired to what, both directions
   python3 -m ragghost organize <path>   stage 3: tiered index; what is load-bearing vs movable
   python3 -m ragghost retrieve <path>   stage 4: build the retrieval layer and audit that it works
+  python3 -m ragghost harness <path>    stage 5: split into subsystems; flag any with no gate
 
 Exit codes, and they are the point:
   0   it looked, and everything checks out
@@ -28,6 +30,7 @@ STAGES = {
     "graph": lambda path: build_graph(path),
     "organize": lambda path: organize(path),
     "retrieve": lambda path: build_index(path),
+    "harness": lambda path: harnesses(path),
 }
 
 

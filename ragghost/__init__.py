@@ -9,6 +9,7 @@ from .scan import KINDS, Result, scan
 from .graph import Graph, build_graph
 from .organize import Index, organize
 from .retrieve import Retriever, build_index
+from .harness import Harnesses, harnesses
 
-__all__ = ["scan", "Result", "KINDS", "build_graph", "Graph", "organize", "Index", "build_index", "Retriever", "__version__"]
+__all__ = ["scan", "Result", "KINDS", "build_graph", "Graph", "organize", "Index", "build_index", "Retriever", "harnesses", "Harnesses", "__version__"]
 __version__ = "0.1.0"
