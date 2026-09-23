@@ -10,6 +10,7 @@ from .graph import Graph, build_graph
 from .organize import Index, organize
 from .retrieve import Retriever, build_index
 from .harness import Harnesses, harnesses
+from .plan import Plan, plan
 
-__all__ = ["scan", "Result", "KINDS", "build_graph", "Graph", "organize", "Index", "build_index", "Retriever", "harnesses", "Harnesses", "__version__"]
+__all__ = ["scan", "Result", "KINDS", "build_graph", "Graph", "organize", "Index", "build_index", "Retriever", "harnesses", "Harnesses", "plan", "Plan", "__version__"]
 __version__ = "0.1.0"
