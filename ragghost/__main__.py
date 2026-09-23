@@ -1,4 +1,4 @@
-# CALLED BY: `python3 -m ragghost ...` -- the command the README tells a stranger to run.
+# CALLED BY: `python3 -m ragghost <stage> <path>` -- the command the README tells a stranger to run.
 # FIRES WHEN: asked -- it is the command line of a standalone tool.
 """The command line. Three outcomes, three exit codes, and it says which one it returned."""
 from __future__ import annotations
@@ -6,16 +6,23 @@ from __future__ import annotations
 import sys
 
 from .scan import scan
+from .graph import build_graph
 
 USAGE = """rag-ghost -- point it at a system and find out what is actually there
 
-  python3 -m ragghost scan <path>      discover everything under <path>
+  python3 -m ragghost scan <path>       stage 1: discover everything, counted twice
+  python3 -m ragghost graph <path>      stage 2: what is wired to what, both directions
 
 Exit codes, and they are the point:
-  0   it looked, and the population checks out
+  0   it looked, and everything checks out
   1   it looked, and found something
   2   IT COULD NOT TELL -- never treat this as clean
 """
+
+STAGES = {
+    "scan": lambda path: scan(path),
+    "graph": lambda path: build_graph(path),
+}
 
 
 def main(argv=None):
@@ -23,20 +30,16 @@ def main(argv=None):
     if not argv or argv[0] in ("-h", "--help", "help"):
         sys.stdout.write(USAGE)
         return 0
-    if argv[0] != "scan":
-        sys.stdout.write("unknown command %r\n\n%s" % (argv[0], USAGE))
+    cmd = argv[0]
+    if cmd not in STAGES:
+        sys.stdout.write("unknown command %r\n\n%s" % (cmd, USAGE))
         return 2
     if len(argv) < 2:
-        sys.stdout.write("scan needs a path.\n\n%s" % USAGE)
+        sys.stdout.write("%s needs a path.\n\n%s" % (cmd, USAGE))
         return 2
-    r = scan(argv[1])
-    r.report()
-    code = r.exit_code()
-    sys.stdout.write("\nexit %d -- %s\n" % (
-        code, {0: "it looked, and the population checks out",
-               1: "it looked, and found something",
-               2: "IT COULD NOT TELL. This is not clean."}[code]))
-    return code
+    result = STAGES[cmd](argv[1])
+    result.report()
+    return result.exit_code()
 
 
 if __name__ == "__main__":

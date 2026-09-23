@@ -6,6 +6,7 @@ Stage 1 (SCAN) is working. Stages 2-8 are not built yet, and `README.md` says so
 place status is claimed.
 """
 from .scan import KINDS, Result, scan
+from .graph import Graph, build_graph
 
-__all__ = ["scan", "Result", "KINDS", "__version__"]
+__all__ = ["scan", "Result", "KINDS", "build_graph", "Graph", "__version__"]
 __version__ = "0.1.0"
