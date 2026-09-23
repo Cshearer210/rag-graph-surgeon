@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="852" height="530" viewBox="0 0 852 530" font-family="SFMono-Regular,Consolas,Liberation Mono,Menlo,monospace" font-size="13">
+<rect width="852" height="530" rx="8" fill="#0d1117"/>
+<rect width="852" height="34" rx="8" fill="#161b22"/>
+<rect y="26" width="852" height="8" fill="#161b22"/>
+<circle cx="20" cy="17" r="6" fill="#ff5f56"/>
+<circle cx="40" cy="17" r="6" fill="#ffbd2e"/>
+<circle cx="60" cy="17" r="6" fill="#27c93f"/>
+<text x="336" y="21" fill="#8b949e" font-size="12">python3 -m ragghost demo</text>
+<text x="22" y="52" fill="#d29922" xml:space="preserve">rag-ghost demo -- a tiny system with four planted problems, examined live</text>
+<text x="22" y="71" fill="#d29922" xml:space="preserve">======================================================================</text>
+<text x="22" y="90" fill="#c9d1d9" xml:space="preserve">The system under the microscope:</text>
+<text x="22" y="109" fill="#c9d1d9" xml:space="preserve">  reports/exporter.py   built, and nothing imports it</text>
+<text x="22" y="128" fill="#c9d1d9" xml:space="preserve">  inventory/sync.py     names inventory.warehouse, which was deleted</text>
+<text x="22" y="147" fill="#c9d1d9" xml:space="preserve">  inventory/test_sync.py   a test living outside tests/</text>
+<text x="22" y="166" fill="#c9d1d9" xml:space="preserve">  shipping/             real code, no test guards it</text>
+<text x="22" y="185" fill="#c9d1d9" xml:space="preserve"></text>
+<text x="22" y="204" fill="#3fb950" xml:space="preserve">GRAPH  -&gt; orphans: [&#x27;exporter.py&#x27;, &#x27;labels.py&#x27;, &#x27;sync.py&#x27;]</text>
+<text x="22" y="223" fill="#c9d1d9" xml:space="preserve">          dangling: [&#x27;inventory/sync.py -&gt; inventory.warehouse&#x27;]</text>
+<text x="22" y="242" fill="#3fb950" xml:space="preserve">ORGANIZE -&gt; misfiled: [&#x27;test_sync.py&#x27;]</text>
+<text x="22" y="261" fill="#3fb950" xml:space="preserve">HARNESS  -&gt; ungated subsystems: [&#x27;reports&#x27;, &#x27;shipping&#x27;]</text>
+<text x="22" y="280" fill="#3fb950" xml:space="preserve">PLAN     -&gt; 7 action(s), worst first:</text>
+<text x="22" y="299" fill="#f85149" xml:space="preserve">             [moved-ref] a named path resolves to nothing -- update the reference or restore the file</text>
+<text x="22" y="318" fill="#f85149" xml:space="preserve">             [no-gate ] a code subsystem no test guards -- add a gate before trusting it</text>
+<text x="22" y="337" fill="#f85149" xml:space="preserve">             [no-gate ] a code subsystem no test guards -- add a gate before trusting it</text>
+<text x="22" y="356" fill="#f85149" xml:space="preserve">             [orphan  ] nothing depends on this file -- wire it in, or delete it if it is dead</text>
+<text x="22" y="375" fill="#f85149" xml:space="preserve">             [orphan  ] nothing depends on this file -- wire it in, or delete it if it is dead</text>
+<text x="22" y="394" fill="#f85149" xml:space="preserve">             [orphan  ] nothing depends on this file -- wire it in, or delete it if it is dead</text>
+<text x="22" y="413" fill="#3fb950" xml:space="preserve">ANALYSE  -&gt; ONE PASS: only 4 unit(s); the per-worker overhead would exceed the work -- one pass</text>
+<text x="22" y="432" fill="#3fb950" xml:space="preserve">FIX (dry run) -&gt; 1 mechanical fix(es) it can apply and PROVE, 6 that need a human</text>
+<text x="22" y="451" fill="#c9d1d9" xml:space="preserve"></text>
+<text x="22" y="470" fill="#8b949e" xml:space="preserve">Exit codes: 0 clean · 1 found something · 2 could-not-tell (never clean).</text>
+<text x="22" y="489" fill="#8b949e" xml:space="preserve">Point it at a real system:  python3 -m ragghost graph /path/to/system</text>
+</svg>

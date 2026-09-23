@@ -24,7 +24,12 @@ USAGE = """rag-ghost -- point it at a system and find out what is actually there
   python3 -m ragghost plan <path>       stage 6: a harm-ranked plan from the real findings
   python3 -m ragghost analyse <path>    stage 7: decide if the work divides -- refuse a pointless fan-out
   python3 -m ragghost fix <path>        stage 8: dry-run the mechanical fixes (add --apply to write them)
+  python3 -m ragghost check <path>      all findings in one report -- for CI. --format text|json|sarif
   python3 -m ragghost demo              a 15-second self-contained demonstration
+
+  Config: a .ragghost.json in the target root -- {"select":[...],"ignore":[...]} of codes.
+  Silence one on a file: a line  # ragghost: allow <CODE>  in that file.
+  Plugins: register a check under the "ragghost.checks" entry point, or a ragghost_plugin_* module.
 
 Exit codes, and they are the point:
   0   it looked, and everything checks out
@@ -53,11 +58,25 @@ def main(argv=None):
     if cmd == "demo":
         from .demo import main as demo_main
         return demo_main(argv[1:])
+    fmt = "text"
+    for a in argv:
+        if a.startswith("--format"):
+            fmt = a.split("=", 1)[1] if "=" in a else (argv[argv.index(a) + 1] if argv.index(a) + 1 < len(argv) else "text")
+    paths = [a for a in argv[1:] if not a.startswith("-") and a not in ("text", "json", "sarif")]
+    if cmd == "check":
+        if not paths:
+            sys.stdout.write("check needs a path.\n\n%s" % USAGE)
+            return 2
+        from .report import check
+        from .plugins import run_plugins
+        result = check(paths[0], fmt=fmt if fmt in ("text", "json", "sarif") else "text",
+                       extra_findings=run_plugins(paths[0]))
+        result.report()
+        return result.exit_code()
     if cmd not in STAGES:
         sys.stdout.write("unknown command %r\n\n%s" % (cmd, USAGE))
         return 2
     apply = "--apply" in argv
-    paths = [a for a in argv[1:] if not a.startswith("-")]
     if not paths:
         sys.stdout.write("%s needs a path.\n\n%s" % (cmd, USAGE))
         return 2

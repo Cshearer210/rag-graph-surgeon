@@ -59,6 +59,8 @@ of what somebody remembered, and the thing nobody remembered is where the bug is
 
 ## See it in 15 seconds
 
+![rag-ghost demo — a tiny system with four planted problems, examined live](assets/demo.svg)
+
 ```
 $ python3 -m ragghost demo
 GRAPH  -> orphans: ['exporter.py', 'labels.py', 'sync.py']
@@ -91,6 +93,26 @@ dry run by default and writes only the mechanical, reversible fixes when you add
 re-measures the world after each edit, rolling it back if the defect is not actually gone.
 
 ---
+
+## Drops into CI
+
+```bash
+python3 -m ragghost check .                 # every finding, ranked, human-readable
+python3 -m ragghost check . --format json   # for a script
+python3 -m ragghost check . --format sarif  # for GitHub code scanning / a dashboard
+```
+
+Exit `0` clean · `1` found something · `2` could-not-tell (never treat as clean).
+
+- **Choose which checks run** — a `.ragghost.json` in the target root:
+  `{"select": ["GRAPH-DANGLING"], "ignore": ["ORG-MISFILED"]}` (by code, or by family like `GRAPH`).
+- **Silence one on a single file** — a line in that file: `# ragghost: allow GRAPH-ORPHAN`
+  (or `# ragghost: allow ALL`). Explicit, local, and visible in review.
+- **Add your own check** — register a callable under the `ragghost.checks` entry point, or ship a
+  `ragghost_plugin_*` module exposing `CHECKS = [fn]`. A plugin that raises is reported and skipped,
+  never silently dropping the run to a clean result.
+
+Codes: `SCAN-DRIFT` · `GRAPH-ORPHAN` · `GRAPH-DANGLING` · `ORG-MISFILED` · `HARNESS-NOGATE` · `RETR-BLIND`.
 
 ## Status, honestly
 
