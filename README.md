@@ -37,7 +37,7 @@ identical. **RAG-Ghost is built to tell them apart.**
 | 7 | **ANALYSE** | fan out parallel workers to judge what does not fit in one pass — and refuse the fan-out where the work does not actually divide |
 | 8 | **FIX** | apply what can be applied mechanically, and prove each fix with a check that fires on its own |
 
-**Stages 1 and 2 work today.** The rest are being built in order, and this README will never claim
+**Stages 1, 2 and 3 work today.** The rest are being built in order, and this README will never claim
 otherwise — see *Status*, below.
 
 ---
