@@ -57,13 +57,33 @@ of what somebody remembered, and the thing nobody remembered is where the bug is
 
 ---
 
+## See it in 15 seconds
+
+```
+$ python3 -m ragghost demo
+GRAPH  -> orphans: ['exporter.py', 'labels.py', 'sync.py']
+          dangling: ['inventory/sync.py -> inventory.warehouse']
+ORGANIZE -> misfiled: ['test_sync.py']
+HARNESS  -> ungated subsystems: ['reports', 'shipping']
+PLAN     -> 7 action(s), worst first:
+             [moved-ref] a named path resolves to nothing -- update the reference or restore the file
+             [no-gate ] a code subsystem no test guards -- add a gate before trusting it
+             [orphan  ] nothing depends on this file -- wire it in, or delete it if it is dead
+ANALYSE  -> ONE PASS: only 4 units; the per-worker overhead would exceed the work
+FIX (dry run) -> 1 mechanical fix it can apply and PROVE, 6 that need a human
+```
+
+`python3 -m ragghost demo` builds a tiny broken system in a temp dir and runs every stage against
+it, live — so the demo can never drift from the tool.
+
 ## Install and run
 
 No dependencies. No account. No API key. No network.
 
 ```bash
 git clone <this repo> && cd rag-ghost
-python3 -m ragghost scan /path/to/any/system
+python3 -m ragghost demo                          # the 15-second tour
+python3 -m ragghost scan /path/to/any/system      # then point it at a real system
 ```
 
 It will not write to the system it is pointed at. The one exception is stage 8 (`fix`), which is a
@@ -88,3 +108,19 @@ re-measures the world after each edit, rolling it back if the defect is not actu
 This table is the only place status is claimed, and it is updated in the same commit as the work.
 A README that describes a version that was never shipped is the first defect this tool looks for
 in somebody else's repo, so it would be a poor place to start.
+
+## Known limits — what it does NOT catch yet
+
+Measured by pointing it at a test bed with one planted example of every issue type (see
+`carrot-sandbox`). The wiring layer is covered; these are the next things to build, named honestly
+rather than left to look covered:
+
+- **symbol-level dead code** — a function exported but never *called* (file-level orphans are caught; symbol-level are not yet).
+- **duplicate definitions** — the same symbol defined in two files, where fixing one leaves the other stale.
+- **test-shape rot** — a test that asserts nothing, swallows its own exception, or is permanently skipped.
+- **config rot** — a config key nothing reads, or an env var referenced but set nowhere.
+- **a doc that names a script/path that does not exist** (a ghost pointer).
+
+None of these are silently mishandled — they are simply out of scope today, and each is a planned
+stage. Mutation-based checks (a test that passes because the code cannot make it fail) are
+[`deadcanary`](https://github.com/Cshearer210/claimproof/tree/main/packages/deadcanary)'s job.

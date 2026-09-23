@@ -13,6 +13,7 @@ from .harness import Harnesses, harnesses
 from .plan import Plan, plan
 from .analyse import Analysis, analyse, should_fan_out
 from .fix import Fix, Fixes, fix
+from .demo import main as demo
 
-__all__ = ["scan", "Result", "KINDS", "build_graph", "Graph", "organize", "Index", "build_index", "Retriever", "harnesses", "Harnesses", "plan", "Plan", "analyse", "Analysis", "should_fan_out", "fix", "Fixes", "Fix", "__version__"]
+__all__ = ["scan", "Result", "KINDS", "build_graph", "Graph", "organize", "Index", "build_index", "Retriever", "harnesses", "Harnesses", "plan", "Plan", "analyse", "Analysis", "should_fan_out", "fix", "Fixes", "Fix", "demo", "__version__"]
 __version__ = "0.1.0"

@@ -24,6 +24,7 @@ USAGE = """rag-ghost -- point it at a system and find out what is actually there
   python3 -m ragghost plan <path>       stage 6: a harm-ranked plan from the real findings
   python3 -m ragghost analyse <path>    stage 7: decide if the work divides -- refuse a pointless fan-out
   python3 -m ragghost fix <path>        stage 8: dry-run the mechanical fixes (add --apply to write them)
+  python3 -m ragghost demo              a 15-second self-contained demonstration
 
 Exit codes, and they are the point:
   0   it looked, and everything checks out
@@ -49,6 +50,9 @@ def main(argv=None):
         sys.stdout.write(USAGE)
         return 0
     cmd = argv[0]
+    if cmd == "demo":
+        from .demo import main as demo_main
+        return demo_main(argv[1:])
     if cmd not in STAGES:
         sys.stdout.write("unknown command %r\n\n%s" % (cmd, USAGE))
         return 2
