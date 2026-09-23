@@ -155,6 +155,77 @@ def _imports(pyfile_abs):
     return mods
 
 
+def _from_targets(pyfile_abs):
+    """Level-0 `from M import n` pairs (M, n), for spotting a submodule that has gone missing.
+    None if the file cannot be parsed -- its references are UNKNOWN, never assumed present."""
+    try:
+        with open(pyfile_abs, encoding="utf-8", errors="replace") as f:
+            tree = ast.parse(f.read())
+    except (OSError, SyntaxError, ValueError):
+        return None
+    out = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            for a in node.names:
+                if a.name != "*":
+                    out.append((node.module, a.name))
+    return out
+
+
+def _defined_names(init_abs):
+    """Top-level names an __init__.py defines or re-exports. None if it cannot be parsed."""
+    try:
+        with open(init_abs, encoding="utf-8", errors="replace") as f:
+            tree = ast.parse(f.read())
+    except (OSError, SyntaxError, ValueError):
+        return None
+    names = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    names.add(t.id)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for a in node.names:
+                names.add((a.asname or a.name).split(".")[0])
+    return names
+
+
+def _broken_submodule_refs(g):
+    """`from pkg import x` where pkg is a package WE OWN, but x is neither a submodule of it nor a
+    name its __init__ defines -- a module that was moved or deleted and the caller never updated.
+
+    This is the failure that reads like a memory problem and is really a labelling one: no import
+    error fires at graph-build time because the checker only looks at files, so the reference rots
+    silently. It is kept honest by only firing when the PACKAGE is one we own (so stdlib and
+    third-party imports are never touched) and when the name is provably absent from both the
+    filesystem and the package's own __init__.
+    """
+    for n in g.nodes:
+        if not n.endswith(".py"):
+            continue
+        if n.startswith("test_") or os.path.basename(n).startswith("test_") \
+                or "/tests/" in n or n.startswith("tests/"):
+            continue
+        froms = _from_targets(os.path.join(g.root, n))
+        if froms is None:
+            continue
+        for module, name in froms:
+            pkg_path = module.replace(".", "/")
+            pkg_init = pkg_path + "/__init__.py"
+            if pkg_init not in g.nodes:
+                continue                       # not a package we own -> external or a module import
+            if (pkg_path + "/" + name + ".py") in g.nodes \
+                    or (pkg_path + "/" + name + "/__init__.py") in g.nodes:
+                continue                       # a real submodule -- fine
+            defined = _defined_names(os.path.join(g.root, pkg_init))
+            if defined is None or name in defined:
+                continue                       # defined in __init__, or unknown -> do not flag
+            g.dangling.append((n, "%s.%s" % (module, name)))
+
+
 
 # A path-like token: a quoted or bare string with a slash and a known source extension. Kept
 # deliberately narrow -- a bare word or a URL is not a file reference, and flagging one would be
@@ -247,4 +318,5 @@ def build_graph(root, skip=VENDORED):
                     g.edges[n].add(target)
                     g.rev[target].add(n)
     _dangling_refs(g, set(skip))
+    _broken_submodule_refs(g)
     return g

@@ -46,6 +46,28 @@ class GraphTest(unittest.TestCase):
         self.assertNotIn("app/used.py", g.orphans)   # used.py IS imported by main
         self.assertEqual(g.exit_code(), 1)
 
+    def test_broken_submodule_import_is_found(self):
+        # from pkg import x, but pkg/x.py is gone and x is not defined in pkg/__init__.py
+        # -> a moved/deleted module the caller never updated (reads like a memory bug)
+        build(self.d, {
+            "inventory/__init__.py": "",
+            "inventory/sync.py": "from inventory import warehouse\ndef sync(): return warehouse.pull()\n",
+        })
+        g = build_graph(self.d)
+        self.assertTrue(any("warehouse" in tgt for _, tgt in g.dangling))
+        self.assertEqual(g.exit_code(), 1)
+
+    def test_real_submodule_and_init_name_do_not_fire(self):
+        # from pkg import real_submodule (exists) and from pkg import NAME (defined in __init__)
+        # -> neither is a broken reference; the detector must stay quiet on both
+        build(self.d, {
+            "pkg/__init__.py": "HELPER = 1\n",
+            "pkg/real.py": "def go(): return 1\n",
+            "pkg/user.py": "from pkg import real\nfrom pkg import HELPER\ndef u(): return real.go() + HELPER\n",
+        })
+        g = build_graph(self.d)
+        self.assertEqual(g.dangling, [])
+
     def test_moved_file_reference_is_found(self):
         build(self.d, {
             "run.py": "print('go')\n",
