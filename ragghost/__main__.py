@@ -12,6 +12,7 @@ from .retrieve import build_index
 from .harness import harnesses
 from .plan import plan
 from .analyse import analyse
+from .fix import fix
 
 USAGE = """rag-ghost -- point it at a system and find out what is actually there
 
@@ -22,6 +23,7 @@ USAGE = """rag-ghost -- point it at a system and find out what is actually there
   python3 -m ragghost harness <path>    stage 5: split into subsystems; flag any with no gate
   python3 -m ragghost plan <path>       stage 6: a harm-ranked plan from the real findings
   python3 -m ragghost analyse <path>    stage 7: decide if the work divides -- refuse a pointless fan-out
+  python3 -m ragghost fix <path>        stage 8: dry-run the mechanical fixes (add --apply to write them)
 
 Exit codes, and they are the point:
   0   it looked, and everything checks out
@@ -37,6 +39,7 @@ STAGES = {
     "harness": lambda path: harnesses(path),
     "plan": lambda path: plan(path),
     "analyse": lambda path: analyse(path),
+    "fix": lambda path, apply=False: fix(path, apply=apply),
 }
 
 
@@ -49,10 +52,12 @@ def main(argv=None):
     if cmd not in STAGES:
         sys.stdout.write("unknown command %r\n\n%s" % (cmd, USAGE))
         return 2
-    if len(argv) < 2:
+    apply = "--apply" in argv
+    paths = [a for a in argv[1:] if not a.startswith("-")]
+    if not paths:
         sys.stdout.write("%s needs a path.\n\n%s" % (cmd, USAGE))
         return 2
-    result = STAGES[cmd](argv[1])
+    result = STAGES[cmd](paths[0], apply=apply) if cmd == "fix" else STAGES[cmd](paths[0])
     result.report()
     return result.exit_code()
 

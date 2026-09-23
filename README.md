@@ -37,8 +37,7 @@ identical. **RAG-Ghost is built to tell them apart.**
 | 7 | **ANALYSE** | fan out parallel workers to judge what does not fit in one pass — and refuse the fan-out where the work does not actually divide |
 | 8 | **FIX** | apply what can be applied mechanically, and prove each fix with a check that fires on its own |
 
-**Stages 1 through 7 work today.** The rest are being built in order, and this README will never claim
-otherwise — see *Status*, below.
+**All eight stages work today.** This README will never claim otherwise — see *Status*, below.
 
 ---
 
@@ -67,7 +66,9 @@ git clone <this repo> && cd rag-ghost
 python3 -m ragghost scan /path/to/any/system
 ```
 
-It will not write to the system it is pointed at.
+It will not write to the system it is pointed at. The one exception is stage 8 (`fix`), which is a
+dry run by default and writes only the mechanical, reversible fixes when you add `--apply` — and
+re-measures the world after each edit, rolling it back if the defect is not actually gone.
 
 ---
 
@@ -76,7 +77,13 @@ It will not write to the system it is pointed at.
 | stage | state |
 |---|---|
 | 1 SCAN | **working** — discovers files, classifies them, counts two independent ways, reports drift |
-| 2–8 | not built yet |
+| 2 GRAPH | **working** — dependency graph both directions; dangling refs and orphans |
+| 3 ORGANIZE | **working** — tiered index; what is load-bearing vs movable; misfiled files |
+| 4 RETRIEVE | **working** — offline tf-idf index; audits itself with a present probe and a noise probe |
+| 5 HARNESS | **working** — splits into subsystems; flags any with no gate |
+| 6 PLAN | **working** — a harm-ranked plan built from the real findings of stages 1–5 |
+| 7 ANALYSE | **working** — decides if the work divides; refuses a fan-out that would not pay off |
+| 8 FIX | **working** — dry-run by default; applies only the mechanical class and proves each edit |
 
 This table is the only place status is claimed, and it is updated in the same commit as the work.
 A README that describes a version that was never shipped is the first defect this tool looks for
