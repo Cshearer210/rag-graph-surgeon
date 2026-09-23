@@ -11,6 +11,7 @@ from .organize import organize
 from .retrieve import build_index
 from .harness import harnesses
 from .plan import plan
+from .analyse import analyse
 
 USAGE = """rag-ghost -- point it at a system and find out what is actually there
 
@@ -20,6 +21,7 @@ USAGE = """rag-ghost -- point it at a system and find out what is actually there
   python3 -m ragghost retrieve <path>   stage 4: build the retrieval layer and audit that it works
   python3 -m ragghost harness <path>    stage 5: split into subsystems; flag any with no gate
   python3 -m ragghost plan <path>       stage 6: a harm-ranked plan from the real findings
+  python3 -m ragghost analyse <path>    stage 7: decide if the work divides -- refuse a pointless fan-out
 
 Exit codes, and they are the point:
   0   it looked, and everything checks out
@@ -34,6 +36,7 @@ STAGES = {
     "retrieve": lambda path: build_index(path),
     "harness": lambda path: harnesses(path),
     "plan": lambda path: plan(path),
+    "analyse": lambda path: analyse(path),
 }
 
 
