@@ -11,7 +11,13 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Chris Shearer" }]
 keywords = ["static-analysis", "dependency-graph", "dead-code", "ci", "audit"]
+# The runtime is deliberately zero-dependency: a stranger's checkout needs only the standard library.
 dependencies = []
+
+# Development-only extras. `pip install -e .[test]` pulls the test runner and the property-based
+# testing library; NONE of these are required to run the tool itself.
+[project.optional-dependencies]
+test = ["pytest>=7", "hypothesis>=6", "coverage>=7"]
 
 [project.urls]
 Repository = "https://github.com/Cshearer210/rag-graph-surgeon"
@@ -19,3 +25,23 @@ Repository = "https://github.com/Cshearer210/rag-graph-surgeon"
 # The import package is `ragghost`; the distribution is `rag-graph-surgeon`.
 [tool.setuptools]
 packages = ["ragghost"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["ragghost"]
+
+[tool.coverage.report]
+show_missing = true
+
+# ruff: lint for real defects (pyflakes F + pycodestyle E/W) rather than style opinions.
+# E501 (line length) is relaxed -- this codebase uses long, deliberately descriptive report strings;
+# E402 is relaxed because the tests intentionally adjust sys.path before importing the package.
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501", "E402"]

@@ -1,15 +1,21 @@
 # CALLED BY: unittest discover. FIRES WHEN: asked.
 """JSON/SARIF output, config select/ignore, inline suppression, and plugins -- proven both ways."""
-import json, os, shutil, sys, tempfile, unittest
+import json
+import os
+import shutil
+import sys
+import tempfile
+import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from ragghost.report import collect, check, to_json, to_sarif, KIND_TO_CODE   # noqa: E402
+from ragghost.report import collect, check, to_json, to_sarif   # noqa: E402
 from ragghost import plugins                                                   # noqa: E402
 from ragghost.report import Finding                                           # noqa: E402
 
 
 def build(root, files):
     for rel, body in files.items():
-        p = os.path.join(root, rel); os.makedirs(os.path.dirname(p) or root, exist_ok=True)
+        p = os.path.join(root, rel)
+        os.makedirs(os.path.dirname(p) or root, exist_ok=True)
         open(p, "w").write(body)
 
 BROKEN = {
@@ -21,8 +27,12 @@ BROKEN = {
 
 
 class ReportTest(unittest.TestCase):
-    def setUp(self): self.d = tempfile.mkdtemp(); build(self.d, BROKEN)
-    def tearDown(self): shutil.rmtree(self.d, ignore_errors=True)
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        build(self.d, BROKEN)
+
+    def tearDown(self):
+        shutil.rmtree(self.d, ignore_errors=True)
 
     def test_findings_are_coded(self):
         codes = {f.code for f in collect(self.d)}
@@ -31,8 +41,11 @@ class ReportTest(unittest.TestCase):
 
     def test_json_and_sarif_shapes(self):
         fs = collect(self.d)
-        j = json.loads(to_json(fs, self.d)); self.assertEqual(j["tool"], "rag-ghost"); self.assertTrue(j["findings"])
-        s = json.loads(to_sarif(fs, self.d)); self.assertEqual(s["version"], "2.1.0")
+        j = json.loads(to_json(fs, self.d))
+        self.assertEqual(j["tool"], "rag-ghost")
+        self.assertTrue(j["findings"])
+        s = json.loads(to_sarif(fs, self.d))
+        self.assertEqual(s["version"], "2.1.0")
         self.assertTrue(s["runs"][0]["results"])
 
     def test_config_ignore_drops_a_code(self):
@@ -56,7 +69,8 @@ class ReportTest(unittest.TestCase):
     def test_plugin_findings_appear(self):
         def my_check(root):
             return [Finding("MY-CUSTOM", "HIGH", "a plugin found something", "x", path=None)]
-        plugins._REGISTRY.clear(); plugins.register(my_check)
+        plugins._REGISTRY.clear()
+        plugins.register(my_check)
         try:
             fs = check(self.d, extra_findings=plugins.run_plugins(self.d)).findings
             self.assertIn("MY-CUSTOM", {f.code for f in fs})

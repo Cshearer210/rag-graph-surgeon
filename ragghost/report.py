@@ -20,7 +20,7 @@ import os
 import re
 import sys
 
-from .plan import plan, SEV
+from .plan import plan
 
 __all__ = ["collect", "Finding", "to_text", "to_json", "to_sarif", "check", "KIND_TO_CODE"]
 

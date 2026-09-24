@@ -205,9 +205,15 @@ would be a poor place to start.
 ## Verify it yourself
 
 ```bash
-python3 -m pytest -q tests     # 63 tests, standard library only + pytest as the runner
+python3 -m pytest -q tests     # 292 tests, standard library only + pytest as the runner
 python3 -m ragghost demo       # runs all eight stages against a live, self-built broken system
 ```
+
+The suite covers **98% of the package** by line (`coverage run -m pytest && coverage report`), and
+half of it asserts the tool *refuses* to say clean — because a test suite that can only ever produce
+a passing result would share the exact blind spot this tool exists to remove. Property-based tests
+(via `hypothesis`, a dev-only extra) check the fan-out decision and the scanner's two-count
+agreement across generated inputs. Install the dev extras with `pip install -e ".[test]"`.
 
 ## License
 

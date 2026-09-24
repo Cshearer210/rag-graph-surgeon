@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import importlib
 import pkgutil
-import sys
 
 __all__ = ["register", "registered", "discover", "run_plugins", "load_errors"]
 
