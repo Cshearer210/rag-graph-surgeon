@@ -1,11 +1,19 @@
-# RAG-Ghost
+# rag-graph-surgeon
 
-**Point it at a broken system. It tells you what is actually there, what is wired to what, what
-is lying to you, and then fixes what it can.**
+**Point it at a system and find out whether everything it promises, points at, or schedules actually exists and fires — then fix what can be fixed mechanically.**
 
-Most tools that audit a codebase answer *"is this file OK?"*. RAG-Ghost asks the opposite
-question — *"does everything this system promises, points at, or schedules actually exist and
-fire?"* — because that is where the failures that survive for months live.
+[![CI](https://github.com/Cshearer210/rag-graph-surgeon/actions/workflows/ci.yml/badge.svg)](https://github.com/Cshearer210/rag-graph-surgeon/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+![dependencies: none](https://img.shields.io/badge/dependencies-none-brightgreen)
+
+<!-- # ragghost: allow GRAPH-DANGLING -- the CI badge above is a github.com URL ending in ci.yml, not a moved local path; suppressed in the open so `check .` on this repo stays honest. -->
+
+> The import package is `ragghost` (`python3 -m ragghost ...`); the repository and distribution are named `rag-graph-surgeon`.
+
+Most tools that audit a codebase answer *"is this file OK?"*. This one asks the opposite question —
+*"does everything this system promises, points at, or schedules actually exist and fire?"* — because
+that is where the failures that survive for months live.
 
 ---
 
@@ -20,28 +28,26 @@ A system does not usually break loudly. It breaks like this:
 - a count that shrank because the scan got narrower, not because the problem got smaller
 
 Every one of those is invisible from the inside. A clean report and an unasked question look
-identical. **RAG-Ghost is built to tell them apart.**
+identical. **rag-graph-surgeon is built to tell them apart.**
 
 ---
 
-## The eight stages
+## How it works
+
+Eight stages, run individually or all at once:
 
 | # | stage | what it does |
 |---|---|---|
 | 1 | **SCAN** | discover every file and every population, with a denominator that comes from a second, independent count |
 | 2 | **GRAPH** | a dependency graph both ways — what breaks if this changes, and what breaks if this moves |
 | 3 | **ORGANIZE** | sort files into a tiered structure; index what must not move rather than moving it |
-| 4 | **RETRIEVE** | build the retrieval layer so the system can answer questions about itself — and audit that layer, because a retriever that returns nothing looks like a system with nothing in it |
-| 5 | **HARNESS** | separate the system into harnesses with gates, checks and doors |
-| 6 | **PLAN** | generate a ranked plan of what should be done, from the real state |
-| 7 | **ANALYSE** | fan out parallel workers to judge what does not fit in one pass — and refuse the fan-out where the work does not actually divide |
+| 4 | **RETRIEVE** | build an offline retrieval layer so the system can answer questions about itself — and audit that layer, because a retriever that returns nothing looks like a system with nothing in it |
+| 5 | **HARNESS** | separate the system into subsystems and flag any with no gate, check or test guarding it |
+| 6 | **PLAN** | generate a harm-ranked plan of what to do, built from the real findings of stages 1–5 |
+| 7 | **ANALYSE** | decide whether the work divides into independent units worth fanning out — and refuse the fan-out where it would not pay off |
 | 8 | **FIX** | apply what can be applied mechanically, and prove each fix with a check that fires on its own |
 
-**All eight stages work today.** This README will never claim otherwise — see *Status*, below.
-
----
-
-## Three rules it holds itself to
+Three rules it holds itself to:
 
 **1. Three outcomes, three exit codes.** `0` clean · `1` found something · `2` could not tell.
 A check that cannot look must never report clean. Most tools have two outcomes, which is why
@@ -57,12 +63,77 @@ of what somebody remembered, and the thing nobody remembered is where the bug is
 
 ---
 
+## Limits, up front
+
+This is a wiring-and-topology auditor, not a full static analyser. It works at file and module
+level and never executes the code it points at. These are the boundaries of its scope today —
+named plainly rather than left to look covered:
+
+- **Symbol-level dead code** — a function that is exported but never *called*. File-level orphans
+  are caught; symbol-level ones are not.
+- **Duplicate definitions** — the same symbol defined in two files, where fixing one leaves the
+  other stale.
+- **Test-shape rot** — a test that asserts nothing, swallows its own exception, or is permanently
+  skipped.
+- **Config rot** — a config key nothing reads, or an environment variable referenced but set
+  nowhere.
+- **Ghost pointers in prose** — a doc that names a script or path that does not exist.
+
+None of these are silently mishandled; they are simply out of scope, and each is a candidate for a
+future stage. Mutation-based checks (a test that passes because the code cannot make it fail) are
+also out of scope.
+
+See the honest per-stage *Status* table near the bottom for what is built and working today.
+
+---
+
+## Install and run
+
+**No dependencies. No account. No API key. No network.** The tool imports only the Python standard
+library, and it never reaches out over the network for anything.
+
+```bash
+git clone https://github.com/Cshearer210/rag-graph-surgeon
+cd rag-graph-surgeon
+
+python3 -m ragghost demo                          # the 15-second tour (self-contained)
+python3 -m ragghost scan /path/to/any/system      # then point it at a real system
+```
+
+Every read-only stage leaves the target untouched. The one exception is stage 8 (`fix`), which is a
+dry run by default and writes only mechanical, reversible fixes when you add `--apply` — re-measuring
+the world after each edit and rolling it back if the defect is not actually gone.
+
+Requires Python 3.11 or newer. `pytest` is needed only to run the test suite, not to run the tool.
+
+## Minimal example
+
+```python
+import ragghost
+
+# Stage 1 (SCAN), read-only: discover every file, count two independent ways, report drift.
+result = ragghost.scan("path/to/any/system")
+result.report()
+raise SystemExit(result.exit_code())   # 0 clean · 1 found something · 2 could-not-tell
+```
+
+Every stage has the same shape: a function that returns a result with `.report()` and
+`.exit_code()`. `ragghost.check(path)` runs all of them and rolls the findings into one report.
+
 ## See it in 15 seconds
 
-![rag-ghost demo — a tiny system with four planted problems, examined live](assets/demo.svg)
+![rag-graph-surgeon demo — a tiny system with four planted problems, examined live](assets/demo.svg)
 
 ```
 $ python3 -m ragghost demo
+rag-ghost demo -- a tiny system with four planted problems, examined live
+======================================================================
+The system under the microscope:
+  reports/exporter.py   built, and nothing imports it
+  inventory/sync.py     names inventory.warehouse, which was deleted
+  inventory/test_sync.py   a test living outside tests/
+  shipping/             real code, no test guards it
+
 GRAPH  -> orphans: ['exporter.py', 'labels.py', 'sync.py']
           dangling: ['inventory/sync.py -> inventory.warehouse']
 ORGANIZE -> misfiled: ['test_sync.py']
@@ -70,27 +141,20 @@ HARNESS  -> ungated subsystems: ['reports', 'shipping']
 PLAN     -> 7 action(s), worst first:
              [moved-ref] a named path resolves to nothing -- update the reference or restore the file
              [no-gate ] a code subsystem no test guards -- add a gate before trusting it
+             [no-gate ] a code subsystem no test guards -- add a gate before trusting it
              [orphan  ] nothing depends on this file -- wire it in, or delete it if it is dead
-ANALYSE  -> ONE PASS: only 4 units; the per-worker overhead would exceed the work
-FIX (dry run) -> 1 mechanical fix it can apply and PROVE, 6 that need a human
+             [orphan  ] nothing depends on this file -- wire it in, or delete it if it is dead
+             [orphan  ] nothing depends on this file -- wire it in, or delete it if it is dead
+ANALYSE  -> ONE PASS: only 4 unit(s); the per-worker overhead would exceed the work -- one pass
+FIX (dry run) -> 1 mechanical fix(es) it can apply and PROVE, 6 that need a human
+
+Exit codes: 0 clean · 1 found something · 2 could-not-tell (never clean).
+Point it at a real system:  python3 -m ragghost graph /path/to/system
 ```
 
-`python3 -m ragghost demo` builds a tiny broken system in a temp dir and runs every stage against
-it, live — so the demo can never drift from the tool.
-
-## Install and run
-
-No dependencies. No account. No API key. No network.
-
-```bash
-git clone <this repo> && cd rag-ghost
-python3 -m ragghost demo                          # the 15-second tour
-python3 -m ragghost scan /path/to/any/system      # then point it at a real system
-```
-
-It will not write to the system it is pointed at. The one exception is stage 8 (`fix`), which is a
-dry run by default and writes only the mechanical, reversible fixes when you add `--apply` — and
-re-measures the world after each edit, rolling it back if the defect is not actually gone.
+`python3 -m ragghost demo` builds a tiny broken system in a temp directory and runs every stage
+against it, live — so the demo can never drift from the tool. The output above is captured verbatim
+from a real run.
 
 ---
 
@@ -114,6 +178,12 @@ Exit `0` clean · `1` found something · `2` could-not-tell (never treat as clea
 
 Codes: `SCAN-DRIFT` · `GRAPH-ORPHAN` · `GRAPH-DANGLING` · `ORG-MISFILED` · `HARNESS-NOGATE` · `RETR-BLIND`.
 
+This repository holds itself to its own standard: `python3 -m ragghost check .` exits `0`. A
+`.ragghost.json` and two inline `# ragghost: allow` comments scope out three known false positives,
+each with a stated reason, in the open — the standalone `tools/` script that regenerates the demo
+SVG (deliberately not imported), and the CI badge URL that resembles a moved local `ci.yml`. Same
+suppression features documented above; nothing silenced without a reason a reviewer can read.
+
 ## Status, honestly
 
 | stage | state |
@@ -127,22 +197,18 @@ Codes: `SCAN-DRIFT` · `GRAPH-ORPHAN` · `GRAPH-DANGLING` · `ORG-MISFILED` · `
 | 7 ANALYSE | **working** — decides if the work divides; refuses a fan-out that would not pay off |
 | 8 FIX | **working** — dry-run by default; applies only the mechanical class and proves each edit |
 
-This table is the only place status is claimed, and it is updated in the same commit as the work.
-A README that describes a version that was never shipped is the first defect this tool looks for
-in somebody else's repo, so it would be a poor place to start.
+Roadmap is the *Limits, up front* list above — the detectors not yet built. This table is the only
+place status is claimed, and it is updated in the same commit as the work. A README that describes a
+version that was never shipped is the first defect this tool looks for in somebody else's repo, so it
+would be a poor place to start.
 
-## Known limits — what it does NOT catch yet
+## Verify it yourself
 
-Measured by pointing it at a test bed with one planted example of every issue type (see
-`carrot-sandbox`). The wiring layer is covered; these are the next things to build, named honestly
-rather than left to look covered:
+```bash
+python3 -m pytest -q tests     # 63 tests, standard library only + pytest as the runner
+python3 -m ragghost demo       # runs all eight stages against a live, self-built broken system
+```
 
-- **symbol-level dead code** — a function exported but never *called* (file-level orphans are caught; symbol-level are not yet).
-- **duplicate definitions** — the same symbol defined in two files, where fixing one leaves the other stale.
-- **test-shape rot** — a test that asserts nothing, swallows its own exception, or is permanently skipped.
-- **config rot** — a config key nothing reads, or an env var referenced but set nowhere.
-- **a doc that names a script/path that does not exist** (a ghost pointer).
+## License
 
-None of these are silently mishandled — they are simply out of scope today, and each is a planned
-stage. Mutation-based checks (a test that passes because the code cannot make it fail) are
-[`deadcanary`](https://github.com/Cshearer210/claimproof/tree/main/packages/deadcanary)'s job.
+MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Chris Shearer.

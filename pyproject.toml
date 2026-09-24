@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rag-graph-surgeon"
+version = "0.1.0"
+description = "Point it at a system and find out whether everything it promises, points at, or schedules actually exists and fires."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Chris Shearer" }]
+keywords = ["static-analysis", "dependency-graph", "dead-code", "ci", "audit"]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/Cshearer210/rag-graph-surgeon"
+
+# The import package is `ragghost`; the distribution is `rag-graph-surgeon`.
+[tool.setuptools]
+packages = ["ragghost"]

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ragghost: allow GRAPH-ORPHAN  -- standalone contributor script (regenerates assets/demo.svg); not imported on purpose
 """Render the live demo output into a crisp terminal-card SVG for the README -- in pure Python, no
 external recorder, no network, no paid service, so it can never rot and regenerates from a clone.
 
