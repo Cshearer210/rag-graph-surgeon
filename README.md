@@ -254,7 +254,22 @@ each with a stated reason, in the open — the standalone `tools/` script that r
 SVG (deliberately not imported), and the CI badge URL that resembles a moved local `ci.yml`. Same
 suppression features documented above; nothing silenced without a reason a reviewer can read.
 
-It has also found two real defects in itself, which is the more useful claim. **Stage 2 was blind to
+It has also found three real defects in itself, which is the more useful claim.
+
+**It crashed on Windows.** Every report marks a finding with `⛔` and a caveat with `⚠`; a Windows
+console runs the cp1252 code page, which has neither, so writing a report raised
+`UnicodeEncodeError` and the tool printed a traceback instead of its answer. It had done that since
+release. **The reason no test saw it is worth more than the bug:** pytest captures output into a
+buffer with no code page, so *running the tests removed the condition being tested*, and the Windows
+job was green throughout. The only Windows step that wrote to a real console was `ragghost check .`,
+marked `continue-on-error` because `check` legitimately exits `1` when it finds something — so a
+crash and a finding produced the same green tick. Both command lines now call
+`ragghost.console_safe()` before writing a byte, `tests/test_console_encoding.py` constructs a
+cp1252 stream rather than waiting for a platform to supply one (so it is the same test everywhere,
+and the runner cannot neutralise it), and CI prints a real report with its markers to the runner's
+own console on all three operating systems.
+
+**Stage 2 was blind to
 relative imports** — it only followed `import x` and `from x import y`, never `from . import y`, so a
 package's internal wiring was invisible and the only edges it saw were the ones a test happened to
 make absolutely. This repository looked clean for exactly that reason, until a subpackage arrived
@@ -298,7 +313,7 @@ would be a poor place to start.
 ## Verify it yourself
 
 ```bash
-python3 -m pytest -q tests           # 354 tests, standard library only + pytest as the runner
+python3 -m pytest -q tests           # 360 tests, standard library only + pytest as the runner
 python3 -m ragghost demo             # all eight stages against a live, self-built broken system
 python3 examples/before_after_demo.py  # the repair half: broken to shipped, narrated
 ```

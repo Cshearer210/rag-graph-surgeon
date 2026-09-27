@@ -205,6 +205,12 @@ def _w(d, rel, text):
 
 
 def main(argv=None):
+    # FIRST, before anything writes a byte: a Windows console is cp1252 and cannot encode the `⛔`
+    # and `⚠` every report uses, so an unprepared stream turns an answer into a traceback. See
+    # `ragghost.console_safe` for the account -- including why the test suite could not see it.
+    from . import console_safe
+    console_safe()
+
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in ("-h", "--help", "help"):
         sys.stdout.write(USAGE)

@@ -19,6 +19,11 @@ from . import interview, road
 
 
 def main(argv=None) -> int:
+    # `python -m ragghost.surgeon` does not pass through ragghost/__main__.py, so it makes its own
+    # console safe. Same reason, one definition: see `ragghost.console_safe`.
+    from .. import console_safe
+    console_safe()
+
     ap = argparse.ArgumentParser(prog="ragghost.surgeon",
                                  description="Fix a broken self-built system and ship its output.")
     ap.add_argument("target", help="path to the (possibly broken) system")

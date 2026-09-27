@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the purpose, requiring a graded output and an untouched original. Six checks in total.
 
 ### Fixed
+- **It crashed on Windows, and had since release.** Every report marks a finding with `⛔` and a
+  caveat with `⚠`; a Windows console runs cp1252, which has neither, so writing a report raised
+  `UnicodeEncodeError` and the tool printed a traceback instead of its answer. Both command lines now
+  call the new `ragghost.console_safe()` before writing anything. **The reason no test caught it is
+  the more useful half:** pytest captures output into a buffer with no code page, so running the
+  tests removed the condition, and the Windows job stayed green — while the one Windows step that
+  wrote to a real console was `continue-on-error`, because `check` legitimately exits 1 when it finds
+  something, so a crash and a finding produced the same tick. `tests/test_console_encoding.py` now
+  builds a cp1252 stream itself rather than waiting for a platform to supply one, covering every
+  stage's report in both directions, and CI prints a real report with its markers to the runner's own
+  console on all three operating systems.
 - **Stage 2 (GRAPH) was blind to relative imports.** It followed `import x` and `from x import y` but
   dropped `from . import y` entirely, so a package's internal wiring produced no edges at all and the
   only edges it saw were the ones a test happened to make absolutely. This repository looked clean
