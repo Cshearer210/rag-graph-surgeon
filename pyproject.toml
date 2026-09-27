@@ -17,7 +17,7 @@ dependencies = []
 # Development-only extras. `pip install -e .[test]` pulls the test runner and the property-based
 # testing library; NONE of these are required to run the tool itself.
 [project.optional-dependencies]
-test = ["pytest>=7", "hypothesis>=6", "coverage>=7"]
+test = ["pytest>=7", "hypothesis>=6.168.0", "coverage>=7"]
 
 # ⭐ THE CONSOLE SCRIPT. Added 2026-09-27: until then this installed cleanly and left a stranger
 # with nothing to type -- you had to already know to say `python3 -m ragghost`. Both entry points
