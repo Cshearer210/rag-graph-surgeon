@@ -99,7 +99,28 @@ class Retriever:
         # absent from the corpus and the audit would still pass, while measuring a string this
         # function never constructed. `wordlike` is consonant-vowel pairs and always starts with a
         # letter.
-        noise = ranks_meaning.gibberish(n=1, shape="wordlike")[0]
+        #
+        # ⛔ AND THE PROBE IS VERIFIED ABSENT BEFORE IT IS USED, which the first version of this
+        # delegation forgot -- a REGRESSION measured 2026-09-27 by running `ragghost check .` ten
+        # times: ONE run in ten reported `RETR-BLIND, noise scored 0.175`. A `wordlike` syllable is
+        # short (`wose`, `tico`, `duse`) and can genuinely occur as a token in a real corpus, so a
+        # randomly drawn probe is USUALLY absent and not RELIABLY absent. The literal this replaced
+        # carried that guarantee in a `while noise in self.index` loop, and delegating dropped it.
+        #
+        # ⭐ A CHECK THAT GIVES TWO DIFFERENT ANSWERS ABOUT ONE UNCHANGED TREE IS THE WORST DEFECT
+        # AN AUDITING TOOL CAN HAVE -- worse than a wrong answer, because nobody can tell which run
+        # to believe, and it turns a real finding into something a reader learns to re-run away.
+        # So: draw, verify every token is absent, redraw if not, and if no absent probe can be found
+        # at all say UNKNOWN rather than inventing a verdict.
+        noise = None
+        for _attempt in range(24):
+            cand = ranks_meaning.gibberish(n=1, shape="wordlike")[0]
+            if not any(t in self.index for t in _tokens(cand)):
+                noise = cand
+                break
+        if noise is None:
+            self.audit_noise = None          # exit_code() reads this as could-not-tell
+            return
         top = self.query(noise, k=1)
         self.audit_noise = (noise, top[0][1] if top else 0.0)
 
@@ -108,6 +129,8 @@ class Retriever:
             return 2                                   # nothing indexed -> UNKNOWN
         if self.audit_present is None:
             return 2                                   # could not construct a present probe
+        if self.audit_noise is None:
+            return 2                                   # could not construct an ABSENT probe either
         _, _, got = self.audit_present
         _, noise_score = self.audit_noise
         if not got:
@@ -136,6 +159,11 @@ class Retriever:
             if not got:
                 w("      The retriever cannot find a term it indexed. It would report a full\n"
                   "      system as empty. Nothing built on it can be trusted.\n")
+        if self.audit_noise is None:
+            w("    NOISE PROBE:   could not construct one that is absent from this corpus.\n"
+              "    UNKNOWN -- with no absent probe there is nothing to compare against, and a\n"
+              "    guess here would be the confident wrong answer this stage exists to find.\n")
+            return
         term, score = self.audit_noise
         mark = "OK" if score == 0.0 else "⛔ RANKS NOISE"
         w("    NOISE PROBE:   an absent token scored %.4f -> %s\n" % (score, mark))

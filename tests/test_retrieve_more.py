@@ -4,7 +4,69 @@
 import io
 
 
+import pytest
+
+from ragghost import ranks_meaning
 from ragghost.retrieve import build_index, Retriever, _tokens, _MAX_BYTES
+
+
+# ── the noise probe must be VERIFIED ABSENT, not merely drawn at random ──────
+#
+# ⛔ THE REGRESSION THIS GUARDS, measured 2026-09-27 by running `ragghost check .` ten times on an
+# unchanged tree: ONE run in ten reported `RETR-BLIND, noise scored 0.175`. The probe had just been
+# changed from a hardcoded literal (which carried a `while noise in self.index` loop guaranteeing
+# absence) to a random `wordlike` draw, and a short syllable like `wose` or `tico` can genuinely be
+# a token in a real corpus. So the probe was USUALLY absent and not RELIABLY absent.
+#
+# ⭐ A CHECK THAT GIVES TWO ANSWERS ABOUT ONE UNCHANGED TREE IS WORSE THAN A WRONG ONE: nobody can
+# tell which run to believe, and it teaches a reader to re-run a real finding away.
+
+def test_the_noise_probe_is_absent_from_the_index_every_time(tree):
+    """Run the audit many times over one corpus. Every probe must score exactly zero."""
+    d = tree({
+        "a.py": "def wose():\n    return 'tico duse wuda'\n",
+        "b.py": "import a\n\nVALUE = a.wose()\n",
+        "notes.md": "wose tico duse wuda cewe vohe teha mehe vepo sifo\n",
+    })
+    for _ in range(40):
+        r = build_index(d)
+        assert r.audit_noise is not None, "an absent probe was constructible here"
+        probe, score = r.audit_noise
+        assert score == 0.0, "probe %r scored %.4f -- it was not absent from the corpus" % (
+            probe, score)
+        assert r.exit_code() == 0, "a healthy retriever must be clean on EVERY run, not most"
+
+
+def test_a_probe_whose_token_is_in_the_corpus_is_redrawn(tree, monkeypatch):
+    """Force the collision: the first draw is a term the corpus definitely has."""
+    d = tree({"a.py": "PLANTED = 'collide'\n", "b.py": "import a\n"})
+    draws = ["collide", "collide", "zzqunlikelyword qqxunlikelyword"]
+
+    def fake(n=12, shape="hex", seed=None):
+        return [draws.pop(0)] if draws else ["qqfallbackword"]
+
+    monkeypatch.setattr(ranks_meaning, "gibberish", fake)
+    r = build_index(d)
+    assert r.audit_noise is not None
+    assert "collide" not in r.audit_noise[0], "a colliding probe must be redrawn, not used"
+    assert r.audit_noise[1] == 0.0
+
+
+def test_no_absent_probe_at_all_is_UNKNOWN_never_clean_and_never_a_finding(tree, monkeypatch):
+    """⛔ If every draw collides, there is nothing to compare against. That is exit 2 -- not 0
+    (which would be a clean bill of health nobody measured) and not 1 (which would be a finding
+    invented out of the tool's own inability to build a probe)."""
+    d = tree({"a.py": "PLANTED = 'collide'\n", "b.py": "import a\n"})
+    monkeypatch.setattr(ranks_meaning, "gibberish", lambda n=12, shape="hex", seed=None: ["collide"])
+    r = build_index(d)
+    assert r.audit_noise is None
+    assert r.exit_code() == 2
+
+    buf = io.StringIO()
+    r.report(out=buf)
+    text = buf.getvalue()
+    assert "UNKNOWN" in text and "absent" in text, \
+        "the report must say it could not build a probe, not stay silent about it"
 
 
 # ── the tokeniser ───────────────────────────────────────────────────────────

@@ -45,6 +45,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the purpose, requiring a graded output and an untouched original. Six checks in total.
 
 ### Fixed
+- **Stage 4's noise probe is now verified ABSENT before it is used, so `check` is deterministic.**
+  Found by running `ragghost check .` ten times on an unchanged tree: one run in ten reported
+  `RETR-BLIND, noise scored 0.175`. The probe had been changed from a hardcoded literal — which
+  carried a `while noise in self.index` loop guaranteeing absence — to a random `wordlike` draw, and
+  a short syllable like `wose` or `tico` can genuinely be a token in a real corpus. The probe was
+  *usually* absent and not *reliably* absent. **A check that gives two answers about one unchanged
+  tree is worse than a wrong one: nobody can tell which run to believe, and it teaches a reader to
+  re-run a real finding away.** It now redraws until every token is absent, and says **UNKNOWN** if
+  no absent probe can be built at all, rather than inventing either a pass or a finding.
 - **It crashed on Windows, and had since release.** Every report marks a finding with `⛔` and a
   caveat with `⚠`; a Windows console runs cp1252, which has neither, so writing a report raised
   `UnicodeEncodeError` and the tool printed a traceback instead of its answer. Both command lines now
