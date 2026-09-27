@@ -4,8 +4,80 @@
 import io
 
 
-from ragghost.graph import (build_graph, Graph, _py_module_map, _imports,
+from ragghost.graph import (build_graph, Graph, _py_module_map, _imports, _own_package,
                             _from_targets, _defined_names)
+
+
+# ── relative imports: the blind spot that made four wired files read as orphans ──
+#
+# Stage 2 used to drop every relative import, so a package's internal wiring was invisible and the
+# only edges it saw were the ones a test happened to make absolutely. Both directions below: the
+# must-fire half is that the edge now EXISTS and the file is not an orphan; the guard half is that
+# a genuinely un-imported module is still reported, so the fix did not simply stop the check firing.
+
+def test_a_dotted_relative_import_creates_an_edge(tree):
+    d = tree({
+        "pkg/__init__.py": "from . import sub\n",
+        "pkg/sub/__init__.py": "from . import worker\n",
+        "pkg/sub/worker.py": "def go():\n    return 1\n",
+    })
+    g = build_graph(d)
+    assert "pkg/sub/worker.py" in g.edges["pkg/sub/__init__.py"], \
+        "`from . import worker` inside a subpackage must be an edge, not nothing"
+    assert "pkg/sub/worker.py" not in g.orphans, \
+        "a module its own package imports is wired; calling it an orphan is the false positive"
+
+
+def test_from_dot_module_import_name_resolves(tree):
+    d = tree({
+        "pkg/__init__.py": "",
+        "pkg/caller.py": "from .helper import go\n\ngo()\n",
+        "pkg/helper.py": "def go():\n    return 1\n",
+    })
+    g = build_graph(d)
+    assert "pkg/helper.py" in g.edges["pkg/caller.py"]
+    assert "pkg/helper.py" not in g.orphans
+
+
+def test_a_parent_relative_import_walks_up_the_right_number_of_levels(tree):
+    d = tree({
+        "pkg/__init__.py": "",
+        "pkg/shared.py": "VALUE = 1\n",
+        "pkg/deep/__init__.py": "",
+        "pkg/deep/user.py": "from ..shared import VALUE\n",
+    })
+    g = build_graph(d)
+    assert "pkg/shared.py" in g.edges["pkg/deep/user.py"], \
+        "`..` must resolve to the PARENT package, not to the file's own"
+
+
+def test_an_unimported_module_is_still_an_orphan(tree):
+    """THE GUARD. Resolving relative imports must not make the orphan check unable to fire."""
+    d = tree({
+        "pkg/__init__.py": "from . import used\n",
+        "pkg/used.py": "X = 1\n",
+        "pkg/never_imported.py": "Y = 2\n",
+    })
+    g = build_graph(d)
+    assert "pkg/never_imported.py" in g.orphans
+    assert "pkg/used.py" not in g.orphans
+
+
+def test_own_package_distinguishes_an_init_from_a_module():
+    """An __init__ IS its package; a module lives IN its parent. One level of error here points
+    every relative import in the tree at a module that does not exist."""
+    assert _own_package("pkg/sub/__init__.py") == "pkg.sub"
+    assert _own_package("pkg/sub/mod.py") == "pkg.sub"
+    assert _own_package("top.py") == ""
+
+
+def test_imports_without_a_rel_skips_relative_rather_than_guessing(tree):
+    """Called with no repo-relative path there is nothing to resolve against, so the honest answer
+    is to skip -- never to invent a package name."""
+    d = tree({"pkg/__init__.py": "", "pkg/m.py": "from . import other\nimport os\n"})
+    got = _imports(_abs(d, "pkg/m.py"))          # deliberately no rel=
+    assert "os" in got
+    assert not any(m.startswith("pkg") for m in got)
 
 
 def _abs(root, rel):

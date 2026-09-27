@@ -53,8 +53,18 @@ jobs:
       # `cd ..` on purpose: from the repo root the source tree is importable whether or not the
       # install worked, so a doctor run there would pass on a broken wheel.
       - name: The install verifies itself, from outside the source tree
+        # Six checks, two of which run the whole repair road -- so this step alone fails if the
+        # wheel shipped the read-only stages and left ragghost.surgeon out of `packages`.
         run: ragghost doctor
         working-directory: ..
+      # ⛔ AND THE REPAIR HALF IS RUN FOR REAL, FROM THE INSTALL, ON THE EXAMPLE. The doctor builds
+      # its own synthetic system, which proves the road works but never touches examples/broken-shop
+      # -- and a stranger's first command is the one in the README, against that example. If the
+      # example stops shipping a store, this is what says so.
+      - name: It repairs the worked example and ships a graded storefront
+        run: ragghost surgeon examples/broken-shop --output landing --name "Aurora Goods" --out ../shipped
+      - name: The shipped storefront really exists
+        run: python -c "import os,sys; p=os.path.join('..','shipped','index.html'); sys.exit(0 if os.path.exists(p) else 'no index.html shipped')"
       - name: And it audits a real system -- itself -- without crashing
         run: ragghost check .
         # `check` exits 1 when it finds something, which is not a CI failure here: this step proves

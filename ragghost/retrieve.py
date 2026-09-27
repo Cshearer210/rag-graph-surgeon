@@ -24,6 +24,7 @@ import os
 import re
 import sys
 
+from . import ranks_meaning
 from .scan import KINDS, VENDORED
 
 __all__ = ["build_index", "Retriever"]
@@ -82,9 +83,16 @@ class Retriever:
             got = any(f == expected for f, _ in hits)
             self.audit_present = (unique_term, expected, got)
         # NOISE PROBE: a token constructed to be absent from the index.
-        noise = "zzq" + "x7q9w" * 3
-        while noise in self.index:
-            noise += "q"
+        #
+        # ⛔ THIS USED TO BE A HARDCODED LITERAL -- `"zzq" + "x7q9w" * 3` -- and it was poisoned by
+        # this very file. The token appeared in `retrieve.py`, `retrieve.py` is in the corpus
+        # whenever you point this tool at its own repository, so the probe WAS in the index it was
+        # meant to be absent from. A `while noise in self.index: noise += "q"` loop then quietly
+        # mutated it until it was absent again, which meant the audit passed while measuring a
+        # string nobody had written down. That is exactly the self-poisoning fixture
+        # `ranks_meaning.nonsense()` was written to prevent, so the two are now ONE definition with
+        # this as a reader rather than a second copy of the idea (nothing-ships-unwired 13-15).
+        noise = ranks_meaning.nonsense(n=1, words=1)[0]
         top = self.query(noise, k=1)
         self.audit_noise = (noise, top[0][1] if top else 0.0)
 

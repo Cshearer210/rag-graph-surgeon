@@ -1,0 +1,6 @@
+[
+  {"id":"cedar-candle","name":"Cedar Candle","price":18,"description":"Hand poured, cedar and amber."},
+  {"id":"linen-throw","name":"Linen Throw","price":64,"description":"Stonewashed heavyweight linen."},
+  {"id":"clay-mug","name":"Clay Mug","price":22,"description":"Wheel-thrown, matte glaze."},
+  {"id":"brass-tray","name":"Brass Tray","price":39,"description":"Solid brass, hand finished."},
+]

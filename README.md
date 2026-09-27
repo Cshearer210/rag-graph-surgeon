@@ -1,9 +1,9 @@
 # rag-graph-surgeon
 
-**Point it at a system and find out whether everything it promises, points at, or schedules actually exists and fires — then fix what can be fixed mechanically.**
+**Point it at a broken system: it finds what is actually wrong, repairs an isolated copy, and ships the output you wanted.**
 
 [![CI](https://github.com/Cshearer210/rag-graph-surgeon/actions/workflows/ci.yml/badge.svg)](https://github.com/Cshearer210/rag-graph-surgeon/actions/workflows/ci.yml)
-![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![dependencies: none](https://img.shields.io/badge/dependencies-none-brightgreen)
 
@@ -32,7 +32,51 @@ identical. **rag-graph-surgeon is built to tell them apart.**
 
 ---
 
-## How it works
+## Two halves, and the second one is the point
+
+The eight stages below **read** a system and tell you what is wrong with it. That is diagnosis, and
+a diagnosis nobody acts on is a report.
+
+`ragghost surgeon` is the other half: it takes the same system, copies it somewhere safe, applies
+the fixes that are safe to apply mechanically, hands back the ones that need a human decision, and
+then **builds and ships the output you actually wanted** — a landing page, a dashboard, a JSON API
+or a command-line tool.
+
+```bash
+ragghost surgeon ./my-broken-system --output landing --name "Aurora Goods" --out ./shipped
+```
+
+Run against the intentionally-broken system in [`examples/broken-shop`](examples/broken-shop), that
+command finds 9 issues, fixes 3, surfaces 6 for a human, and ships a storefront graded at 100% —
+**without ever modifying your originals.** Reproduce it:
+
+```bash
+python3 examples/before_after_demo.py        # the whole story, broken to shipped, narrated
+python3 -m pytest tests/test_surgeon_sandbox.py
+```
+
+The road it runs, eight steps, all mechanical — no model call, no network, no cost, same answer
+every time:
+
+    1. INTERVIEW  your goal and which output to ship (a scope.json when running unattended)
+    2. INGEST     index every file exactly, and graph what calls, imports and enforces what
+    3. WORKSPACE  copy into an isolated workspace, and triage rules: keep the ones that help,
+                  flag the ones that hurt for you to approve, propose the ones that are missing
+    4. DIAGNOSE   scan for broken JSON, broken imports, missing config, syntax errors, unwired code
+    5. FIX        apply the root-cause fix for each safe case
+    6. BUILD      build the requested output along its road
+    7. GRADE      score it against a rubric, and on a fail re-run the failing step with the
+                  specific fix appended — it improves itself rather than shipping below the bar
+    8. SHIP       emit the output plus proof: what changed, what shipped, what you must decide
+
+**The safety line: the tool proposes, the owner disposes.** Anything that deletes data, anything a
+stranger would see, and anything that costs money is **surfaced, never done** — it lands in the
+proof file as a decision waiting for you. In the example above that is 6 of the 9 issues, including
+a file with a syntax error and an orphaned payment handler, neither of which it will touch.
+
+---
+
+## How the diagnosis works
 
 Eight stages, run individually or all at once:
 
@@ -98,7 +142,11 @@ pip install git+https://github.com/Cshearer210/rag-graph-surgeon
 ragghost doctor                      # verify THIS install actually works, before trusting it
 ragghost demo                        # the 15-second tour (self-contained)
 ragghost scan /path/to/any/system    # then point it at a real system
+ragghost surgeon /path/to/system --output landing --name "Your Co" --out ./shipped
 ```
+
+> `ragghost doctor` checks **the tool**. `ragghost surgeon` repairs **your system**. They are
+> different commands on purpose: `doctor` is the `brew doctor` convention and takes no path.
 
 `ragghost doctor` exists because a green CI badge tells you the *source* is fine and says nothing
 about the copy on your machine — and because a tool that audits other systems has no business
@@ -106,6 +154,13 @@ asking to be trusted on its word. It checks the installed package is real rather
 namespace, that every name it publishes resolves, that a target it cannot read comes back as
 **UNKNOWN and never clean**, and — in both directions — that it finds a planted defect in a
 synthetic system and stays quiet on a clean one. It exits non-zero if any of that is untrue.
+
+Two of its six checks exist for the repair half specifically, because that half can go missing in a
+way nothing else would notice: this project lists its packages explicitly, so a subpackage left out
+of that list simply is not in the wheel — `pip install` succeeds, `import ragghost` succeeds, and
+`ragghost surgeon` fails on your machine and nowhere else. So the doctor imports every module the
+surgeon names, and then **runs the whole repair road end to end** on a system it builds itself,
+requiring a graded output and an untouched original.
 
 Working on the tool itself (the module form still works everywhere the command does):
 
@@ -199,6 +254,16 @@ each with a stated reason, in the open — the standalone `tools/` script that r
 SVG (deliberately not imported), and the CI badge URL that resembles a moved local `ci.yml`. Same
 suppression features documented above; nothing silenced without a reason a reviewer can read.
 
+It has also found two real defects in itself, which is the more useful claim. **Stage 2 was blind to
+relative imports** — it only followed `import x` and `from x import y`, never `from . import y`, so a
+package's internal wiring was invisible and the only edges it saw were the ones a test happened to
+make absolutely. This repository looked clean for exactly that reason, until a subpackage arrived
+whose modules the tests reach only through their package, and stage 2 called four demonstrably wired
+files orphans. And a comment in `scan.py` had named a module that never existed, which stage 2
+reported the moment a file of that basename appeared elsewhere and the stale reference started to
+look like the move it resembles. Both are fixed, both have tests in both directions, and both were
+found by running the tool on itself rather than by reading it.
+
 ## Status, honestly
 
 | stage | state |
@@ -212,6 +277,19 @@ suppression features documented above; nothing silenced without a reason a revie
 | 7 ANALYSE | **working** — decides if the work divides; refuses a fan-out that would not pay off |
 | 8 FIX | **working** — dry-run by default; applies only the mechanical class and proves each edit |
 
+And the repair half:
+
+| part | state |
+|---|---|
+| **SURGEON** — the eight-step repair road | **working** — interview, ingest, isolate, diagnose, fix, build, grade, ship, all mechanical |
+| output: `landing` | **working** — graded 100% on the broken-shop example |
+| output: `dashboard` | **working** — graded, with its own rubric |
+| output: `api` | **working** — emits `api/index.json`, graded |
+| output: `cli` | **working** — emits a runnable `tool.py`; a test executes the generated tool |
+| the safety line | **working** — deletion, public-facing and money-spending fixes are surfaced, never applied |
+| self-improvement on a failing grade | **working** — re-diagnoses and rebuilds, up to 3 attempts, then surfaces |
+| a pluggable model / agent layer | **interface only** — `surgeon/agents.py` defines it with mechanical defaults; no model is called, by design |
+
 Roadmap is the *Limits, up front* list above — the detectors not yet built. This table is the only
 place status is claimed, and it is updated in the same commit as the work. A README that describes a
 version that was never shipped is the first defect this tool looks for in somebody else's repo, so it
@@ -220,15 +298,32 @@ would be a poor place to start.
 ## Verify it yourself
 
 ```bash
-python3 -m pytest -q tests     # 292 tests, standard library only + pytest as the runner
-python3 -m ragghost demo       # runs all eight stages against a live, self-built broken system
+python3 -m pytest -q tests           # 354 tests, standard library only + pytest as the runner
+python3 -m ragghost demo             # all eight stages against a live, self-built broken system
+python3 examples/before_after_demo.py  # the repair half: broken to shipped, narrated
 ```
 
-The suite covers **98% of the package** by line (`coverage run -m pytest && coverage report`), and
-half of it asserts the tool *refuses* to say clean — because a test suite that can only ever produce
-a passing result would share the exact blind spot this tool exists to remove. Property-based tests
-(via `hypothesis`, a dev-only extra) check the fan-out decision and the scanner's two-count
+Half the suite asserts the tool *refuses* to say clean — because a test suite that can only ever
+produce a passing result would share the exact blind spot this tool exists to remove. Property-based
+tests (via `hypothesis`, a dev-only extra) check the fan-out decision and the scanner's two-count
 agreement across generated inputs. Install the dev extras with `pip install -e ".[test]"`.
+
+**Coverage, measured rather than remembered** (`coverage run -m pytest && coverage report`): **87% of
+the package by line.** The eight read-only stages are **95–100% each**; the repair half is what
+brings the total down, and the honest breakdown is worth more than the single number:
+
+- One figure is a **measurement artefact, not a gap.** `ragghost/surgeon/builders/dashboard.py` reads
+  **18%** while `tests/test_builders_ship.py` asserts it ships its page — because that test runs the
+  command in a **subprocess**, and an in-process coverage run cannot see another interpreter. Every
+  output builder is exercised end to end there, including one test that executes the `cli` tool the
+  tool generated.
+- One was a **real gap, and is closed.** `surgeon/__main__.py` read **0%** and had no in-process test
+  of the branches that decide its exit code — including *a target that is not a directory returns 2,
+  never 0*, which is the same three-outcome rule the rest of the tool holds to.
+  `tests/test_surgeon_cli.py` now covers those in both directions, and that one file moved the total
+  from 82% to 87%.
+- The rest is the surgeon's interactive and error paths: `interview.py` **69%** (the questions it asks
+  a human) and `fix.py` **78%** (branches for filesystem failures mid-repair).
 
 ## License
 
