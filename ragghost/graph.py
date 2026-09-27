@@ -283,7 +283,16 @@ def _broken_submodule_refs(g):
 # A path-like token: a quoted or bare string with a slash and a known source extension. Kept
 # deliberately narrow -- a bare word or a URL is not a file reference, and flagging one would be
 # the over-firing this tool refuses.
-_PATHISH = re.compile(r"([\w][\w./\-]*\.[A-Za-z0-9]{1,5})")
+#
+# ⛔ THE LEADING DOT IS NOT OPTIONAL DECORATION AND LEAVING IT OUT CAUSED A FALSE POSITIVE. This read
+# `[\w][\w./\-]*...`, which cannot begin with a dot -- so a reference to `.github/workflows/ci.yml`
+# matched from `github` onward, that path does not exist, a file named `ci.yml` DOES exist elsewhere,
+# and the tool reported a dangling reference to a file that was sitting right where the comment said.
+# Every project documents a dot-directory (`.github/`, `.config/`), so this over-fired on a shape that
+# is everywhere. Found 2026-09-27 by a new check running the README's own commands, one of which is
+# `ragghost check .` -- it had been invisible because the only files naming a dot-path were under
+# `examples/` and `tests/`, both of which this function skips. `./x.py` and `../x.py` now resolve too.
+_PATHISH = re.compile(r"((?:\.{1,2}/)?\.?[\w][\w./\-]*\.[A-Za-z0-9]{1,5})")
 _TEXT_EXT = (".py", ".js", ".ts", ".tsx", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg",
              ".conf", ".sh", ".bash", ".md", ".txt", ".html")
 

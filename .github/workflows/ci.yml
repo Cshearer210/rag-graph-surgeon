@@ -36,6 +36,14 @@ jobs:
       # example's own assertion is what caught it.
       - name: Every example still runs
         run: python examples/run_all.py
+      # ⛔ THE README IS THE ONE FILE EVERY STRANGER READS AND THE ONE FILE NO TEST TOUCHES, so it
+      # rots silently and fails in front of the person you most wanted to impress. This types what it
+      # tells a stranger to type and checks the exit code each command is DOCUMENTED to return --
+      # several are supposed to be non-zero, and a checker asserting "exit 0" would call the tool
+      # broken for doing the thing it is being shown doing. It also re-counts the tests and
+      # re-measures coverage, because a number typed into a document cannot notice it went wrong.
+      - name: The README still describes this tool
+        run: python tools/readme_runs.py --tests
 
   install:
     # ⛔ THIS JOB EXISTS BECAUSE THE SUITE ABOVE CANNOT SEE THE FAILURES THAT MATTER MOST TO A

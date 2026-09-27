@@ -361,8 +361,9 @@ would be a poor place to start.
 ## Verify it yourself
 
 ```bash
-python3 -m pytest -q tests           # 435 tests, standard library only + pytest as the runner
+python3 -m pytest -q tests           # 442 tests, standard library only + pytest as the runner
 python3 examples/run_all.py          # every example, which CI also runs
+python3 tools/readme_runs.py --tests # and every command ON THIS PAGE, with its documented exit code
 python3 -m ragghost demo             # all eight stages against a live, self-built broken system
 python3 examples/before_after_demo.py  # the repair half: broken to shipped, narrated
 ```
@@ -372,7 +373,7 @@ produce a passing result would share the exact blind spot this tool exists to re
 tests (via `hypothesis`, a dev-only extra) check the fan-out decision and the scanner's two-count
 agreement across generated inputs. Install the dev extras with `pip install -e ".[test]"`.
 
-**Coverage, measured rather than remembered** (`coverage run -m pytest && coverage report`): **88% of
+**Coverage, measured rather than remembered** (`coverage run -m pytest && coverage report`): **87% of
 the package by line.** The eight read-only stages are **95–100% each**, and so are the two library
 judgements (`ranks_meaning` and `fanout`, 98% each); the repair half is what brings the total down,
 and the honest breakdown is worth more than the single number:

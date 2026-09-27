@@ -31,6 +31,9 @@ USAGE = """rag-ghost -- point it at a system and find out what is actually there
   python3 -m ragghost demo              a 15-second self-contained demonstration
   python3 -m ragghost doctor            verify THIS install actually works, before trusting it
 
+  python3 -m ragghost fanout <shape>    should this work be spread across agents? --items N --cap N
+  python3 -m ragghost shapes            every shape of work, and whether fanning it out is honest
+
   python3 -m ragghost surgeon <path>    repair an isolated COPY of that system and SHIP its output
                                         --output landing|dashboard|api|cli  --name "Your Co"
                                         --out ./shipped  --interview  --scope scope.json  --json
@@ -195,6 +198,51 @@ def doctor(argv=None):
     return 0 if not failed else 1
 
 
+def _fanout_cmd(cmd, rest):
+    """`ragghost fanout <shape> [--items N] [--cap N] [--fits-one-context]` and `ragghost shapes`.
+
+    ⭐ THESE TWO ARE THE ONLY PART OF THE LIBRARY HALF THAT WORKS FROM A COMMAND LINE, and that is
+    why they are here while `ranks_meaning` is not: the fan-out decision needs nothing but the shape
+    of the work, so you can ask it before you have written a line. Auditing a retrieval index needs a
+    function that queries YOUR index, which a shell cannot supply -- `tools/run_against_real_index.py`
+    and `examples/` are how that one is run.
+
+    The exit code IS the answer, and it is the same three everywhere in this tool:
+    0 fan out · 1 do not · 2 cannot tell (an unrecognised shape is never a yes).
+    """
+    import argparse
+
+    from .fanout import SHAPES, advise
+
+    if cmd == "shapes":
+        w = sys.stdout.write
+        w("SHAPES THAT DIVIDE -- fanning out is honest for these:\n")
+        for s in SHAPES:
+            if s.divides:
+                w("   %-22s %s\n" % (s.key, s.why))
+        w("\nSHAPES THAT DO NOT -- one context does these better:\n")
+        for s in SHAPES:
+            if not s.divides:
+                w("   %-22s %s\n" % (s.key, s.why))
+        w("\n  python3 -m ragghost fanout <shape> --items N [--cap N] [--fits-one-context]\n")
+        return 0
+
+    ap = argparse.ArgumentParser(prog="ragghost fanout",
+                                 description="Should this work be spread across agents at all?")
+    ap.add_argument("shape", help="the shape of the work -- `ragghost shapes` lists them")
+    ap.add_argument("--items", type=int, default=None, help="how many units of work")
+    ap.add_argument("--cap", type=int, default=None, help="the most workers you would dispatch")
+    ap.add_argument("--fits-one-context", action="store_true", dest="fits_one_context")
+    try:
+        a = ap.parse_args(rest)
+    except SystemExit:
+        # argparse exits 2 on a usage error, which is already this tool's "could not tell".
+        return 2
+    adv = advise(shape=a.shape, items=a.items, fits_one_context=a.fits_one_context, cap=a.cap)
+    sys.stdout.write(str(adv) + "\n")
+    return adv.code
+
+
 def _w(d, rel, text):
     """Write one file of a synthetic system, creating its directory."""
     os.makedirs(d, exist_ok=True)
@@ -218,6 +266,8 @@ def main(argv=None):
     cmd = argv[0]
     if cmd == "doctor":
         return doctor(argv[1:])
+    if cmd in ("fanout", "shapes"):
+        return _fanout_cmd(cmd, argv[1:])
     if cmd == "surgeon":
         # Imported here rather than at module scope: the surgeon is 18 modules, and a stranger
         # running `ragghost scan` should not pay for the repair road they did not ask for.

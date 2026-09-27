@@ -71,6 +71,50 @@ def test_own_package_distinguishes_an_init_from_a_module():
     assert _own_package("top.py") == ""
 
 
+# ── the dangling-reference token: a dot-directory is a real path, not a missing one ──
+
+def test_a_dot_directory_reference_that_exists_is_not_flagged(tree):
+    """⛔ THE FALSE POSITIVE THIS GUARDS. The token pattern could not begin with a dot, so a comment
+    naming `.github/workflows/ci.yml` matched from `github` onward — a path that does not exist —
+    and because a file called `ci.yml` DID exist elsewhere it looked like a move nobody updated.
+    Every project documents a dot-directory, so it over-fired on a shape that is everywhere."""
+    d = tree({
+        "main.py": "# CALLED BY: .github/workflows/ci.yml\nA = 1\n",
+        "helper.py": "import main\n",
+        ".github/workflows/ci.yml": "name: CI\n",
+    })
+    g = build_graph(d)
+    assert not [t for _f, t in g.dangling if "ci.yml" in t], \
+        "a dot-directory path that EXISTS must not be reported as dangling: %r" % g.dangling
+
+
+def test_a_dot_directory_reference_that_is_genuinely_missing_IS_flagged(tree):
+    """THE MUST-FIRE HALF. Allowing the leading dot must not stop the check finding a real move.
+
+    ⚠ THE FIXTURE HAS TO CARRY THE EXACT BASENAME SOMEWHERE ELSE, and the first version of this test
+    did not — it planted `ci.yml` and expected a reference to `deploy.yml` to fire. It did not, and
+    the CODE was right: the near-miss condition is that a file of THAT basename exists elsewhere, so
+    the reference looks like a move nobody updated. A path with no sibling anywhere is an external or
+    example path and flagging it would be over-firing. The test was wrong, not the tool.
+    """
+    d = tree({
+        "main.py": "# CALLED BY: .github/workflows/deploy.yml\nA = 1\n",
+        "helper.py": "import main\n",
+        "ci/deploy.yml": "name: deploy\n",     # the same basename lives here -> it looks like a move
+    })
+    g = build_graph(d)
+    assert [t for _f, t in g.dangling if "deploy.yml" in t], \
+        "a dot-directory path that does NOT exist, whose basename lives elsewhere, is a dangling ref"
+
+
+def test_a_dot_slash_relative_reference_resolves(tree):
+    d = tree({
+        "main.py": "# see ./helper.py\nA = 1\n",
+        "helper.py": "import main\n",
+    })
+    assert not [t for _f, t in build_graph(d).dangling if "helper.py" in t]
+
+
 def test_imports_without_a_rel_skips_relative_rather_than_guessing(tree):
     """Called with no repo-relative path there is nothing to resolve against, so the honest answer
     is to skip -- never to invent a package name."""
