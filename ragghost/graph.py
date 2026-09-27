@@ -140,13 +140,49 @@ def _py_module_map(nodes):
     return out
 
 
-def _imports(pyfile_abs):
-    """The modules a Python file imports, from its real AST. None if it cannot be parsed."""
+def _own_package(rel):
+    """The dotted package a repo-relative Python file lives IN.
+
+    `pkg/sub/__init__.py` IS the package `pkg.sub`; `pkg/sub/mod.py` lives in `pkg.sub`. Getting
+    that distinction wrong shifts every relative import by one level, which produces edges to
+    modules that do not exist rather than an error.
+    """
+    parts = rel[:-3].split("/") if rel.endswith(".py") else rel.split("/")
+    if parts and parts[-1] == "__init__":
+        parts = parts[:-1]          # the __init__ IS its package
+    else:
+        parts = parts[:-1]          # a module lives in its parent package
+    return ".".join(p for p in parts if p)
+
+
+def _imports(pyfile_abs, rel=None):
+    """The modules a Python file imports, from its real AST. None if it cannot be parsed.
+
+    ⛔ RELATIVE IMPORTS USED TO BE DROPPED ENTIRELY -- the ImportFrom branch read
+    `if node.module and node.level == 0`, so `from . import api, cli` and `from .scan import scan`
+    produced NO edge at all. Every well-formed Python package imports its own modules that way, so
+    the graph was blind to a system's internal wiring and only saw what crossed a package boundary.
+
+    ⚠ AND IT LOOKED FINE, WHICH IS THE PART WORTH KEEPING: this repository's own top-level modules
+    all had dependents, so nothing was reported -- but the edges came from the TEST FILES, which
+    import absolutely (`from ragghost import scan`). The moment a subpackage arrived whose modules
+    the tests reach only through their package (`ragghost/surgeon/builders/*`), stage 2 called four
+    demonstrably wired files orphans. A blind spot that any test suite accidentally papers over is
+    exactly the shape this tool exists to find, and it was in the tool. Fixed 2026-09-27.
+
+    `rel` is the file's repo-relative path and is what makes the resolution possible; without it a
+    relative import cannot be resolved at all, so it is still skipped rather than guessed.
+
+    ⚠ STILL A NAMED LIMIT: a relative import of something that does NOT exist (`from . import gone`)
+    resolves to no module and is silently dropped here rather than reported. `_broken_submodule_refs`
+    catches that shape for absolute imports only. Named rather than left looking covered.
+    """
     try:
         with open(pyfile_abs, encoding="utf-8", errors="replace") as f:
             tree = ast.parse(f.read())
     except (OSError, SyntaxError, ValueError):
         return None
+    pkg = _own_package(rel) if rel else None
     mods = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -157,6 +193,18 @@ def _imports(pyfile_abs):
                 mods.add(node.module)
                 for a in node.names:
                     mods.add(node.module + "." + a.name)
+            elif node.level and pkg is not None:
+                # `level` counts the leading dots: 1 = this package, 2 = its parent, and so on.
+                base_parts = pkg.split(".") if pkg else []
+                if node.level > 1:
+                    base_parts = base_parts[:len(base_parts) - (node.level - 1)]
+                base = ".".join(base_parts)
+                full = ".".join(p for p in (base, node.module or "") if p)
+                if full:
+                    mods.add(full)
+                for a in node.names:
+                    if a.name != "*":
+                        mods.add(".".join(p for p in (full, a.name) if p))
     return mods
 
 
@@ -235,7 +283,16 @@ def _broken_submodule_refs(g):
 # A path-like token: a quoted or bare string with a slash and a known source extension. Kept
 # deliberately narrow -- a bare word or a URL is not a file reference, and flagging one would be
 # the over-firing this tool refuses.
-_PATHISH = re.compile(r"([\w][\w./\-]*\.[A-Za-z0-9]{1,5})")
+#
+# ⛔ THE LEADING DOT IS NOT OPTIONAL DECORATION AND LEAVING IT OUT CAUSED A FALSE POSITIVE. This read
+# `[\w][\w./\-]*...`, which cannot begin with a dot -- so a reference to `.github/workflows/ci.yml`
+# matched from `github` onward, that path does not exist, a file named `ci.yml` DOES exist elsewhere,
+# and the tool reported a dangling reference to a file that was sitting right where the comment said.
+# Every project documents a dot-directory (`.github/`, `.config/`), so this over-fired on a shape that
+# is everywhere. Found 2026-09-27 by a new check running the README's own commands, one of which is
+# `ragghost check .` -- it had been invisible because the only files naming a dot-path were under
+# `examples/` and `tests/`, both of which this function skips. `./x.py` and `../x.py` now resolve too.
+_PATHISH = re.compile(r"((?:\.{1,2}/)?\.?[\w][\w./\-]*\.[A-Za-z0-9]{1,5})")
 _TEXT_EXT = (".py", ".js", ".ts", ".tsx", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg",
              ".conf", ".sh", ".bash", ".md", ".txt", ".html")
 
@@ -312,7 +369,7 @@ def build_graph(root, skip=VENDORED):
     for n in g.nodes:
         ap = os.path.join(g.root, n)
         if n.endswith(".py"):
-            mods = _imports(ap)
+            mods = _imports(ap, rel=n)      # `rel` is what lets a relative import resolve at all
             if mods is None:
                 g.unparsed.append(n)
                 continue

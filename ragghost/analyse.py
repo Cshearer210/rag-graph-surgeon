@@ -10,6 +10,12 @@ see a fragment, none sees the whole, and the merge has to be done once anyway --
 was pure overhead. This stage makes that decision explicitly, from the real dependency structure,
 and refuses the fan-out where the work does not actually divide.
 
+⚠ THE SIBLING QUESTION LIVES IN `ragghost/fanout.py` AND IS NOT THIS ONE. This stage asks it about
+A CODEBASE and answers from the measured dependency graph. `fanout.advise()` asks it about A JOB
+somebody is about to run and answers from the SHAPE they name -- returning CANNOT TELL for a shape
+it does not recognise, because the permissive answer there spends real money.
+Two questions, two answers, one name each.
+
 No dependencies, no network. It reads; it never writes to the target.
 """
 from __future__ import annotations

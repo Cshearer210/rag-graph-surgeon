@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rag-graph-surgeon"
-version = "0.1.0"
-description = "Point it at a system and find out whether everything it promises, points at, or schedules actually exists and fires."
+version = "0.2.0"
+description = "Point it at a broken system: it finds what is actually wrong, repairs an isolated copy of it, and ships the output you wanted."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -29,8 +29,15 @@ ragghost = "ragghost.__main__:main"
 Repository = "https://github.com/Cshearer210/rag-graph-surgeon"
 
 # The import package is `ragghost`; the distribution is `rag-graph-surgeon`.
+#
+# ⛔ EVERY SUBPACKAGE MUST BE NAMED HERE. This list is explicit rather than auto-discovered, so a
+# subpackage left out of it is simply absent from the wheel: `pip install` succeeds, `import
+# ragghost` succeeds, and the missing half explodes on a stranger's machine. The source tree can
+# never see that, because there the imports work whether or not the install did. `ragghost doctor`
+# imports every module the surgeon names, which is what turns this from a silent omission into a
+# failing check.
 [tool.setuptools]
-packages = ["ragghost"]
+packages = ["ragghost", "ragghost.surgeon", "ragghost.surgeon.builders"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

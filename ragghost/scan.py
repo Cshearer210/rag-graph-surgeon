@@ -1,4 +1,14 @@
-# CALLED BY: ragghost/cli.py  (`python3 -m ragghost scan <path>`)
+# CALLED BY: ragghost/__main__.py  (`python3 -m ragghost scan <path>`)
+# ⛔ THIS NAMED a cli module inside this package, and no such module has ever existed here. Stage 2
+# reported it as a dangling reference -- the defect class this tool advertises: a named path that
+# resolves to nothing, sitting in a comment where no import error can ever fire. Corrected
+# 2026-09-27, and found by running `ragghost check .` on this repository rather than by reading it.
+#
+# ⭐ WORTH KEEPING, because it explains why a true finding stayed invisible for days: the dangling
+# check only fires when a file of that BASENAME exists somewhere else in the tree, so the reference
+# looks like a move nobody updated rather than a typo. Nothing was called that until the surgeon's
+# output builders arrived, one of which is. The stale comment was equally wrong the whole time; what
+# changed is that the repository finally contained the evidence that made it recognisable.
 # FIRES WHEN: asked -- this is a library module of a standalone tool, and the tool is run by the
 #             person who downloaded it. There is no hook chain in a stranger's checkout.
 """STAGE 1 -- SCAN. What is actually in this system, counted twice.

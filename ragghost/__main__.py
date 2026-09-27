@@ -31,6 +31,15 @@ USAGE = """rag-ghost -- point it at a system and find out what is actually there
   python3 -m ragghost demo              a 15-second self-contained demonstration
   python3 -m ragghost doctor            verify THIS install actually works, before trusting it
 
+  python3 -m ragghost fanout <shape>    should this work be spread across agents? --items N --cap N
+  python3 -m ragghost shapes            every shape of work, and whether fanning it out is honest
+
+  python3 -m ragghost surgeon <path>    repair an isolated COPY of that system and SHIP its output
+                                        --output landing|dashboard|api|cli  --name "Your Co"
+                                        --out ./shipped  --interview  --scope scope.json  --json
+                                        ⚠ the stages above only READ. This one repairs and builds.
+                                        `python3 -m ragghost.surgeon ...` is the same command.
+
   Config: a .ragghost.json in the target root -- {"select":[...],"ignore":[...]} of codes.
   Silence one on a file: a line  # ragghost: allow <CODE>  in that file.
   Plugins: register a check under the "ragghost.checks" entry point, or a ragghost_plugin_* module.
@@ -126,16 +135,112 @@ def doctor(argv=None):
                                "report clean" % r.exit_code())
         return "a missing target is exit 2 (could not tell), never 0"
 
+    def _the_surgeon_is_in_the_install():
+        """⛔ THE FAILURE THIS CATCHES IS A PACKAGING ONE AND IT IS SILENT. `pyproject.toml` lists
+        its packages EXPLICITLY, so `ragghost.surgeon` and `ragghost.surgeon.builders` have to be
+        named there or the wheel ships the eight stages and none of the repair road -- `pip install`
+        succeeds, `import ragghost` succeeds, and `ragghost surgeon` explodes on a stranger's
+        machine. The source tree cannot see it, because there imports work either way.
+
+        The population is `surgeon.__all__`, never a typed list: a module added later and missed
+        here would leave the new module untested while this kept passing.
+        """
+        import importlib
+        from . import surgeon
+        missing = []
+        for name in list(surgeon.__all__) + ["builders.landing", "builders.dashboard",
+                                             "builders.api", "builders.cli", "__main__"]:
+            try:
+                importlib.import_module("ragghost.surgeon." + name)
+            except Exception as exc:                               # noqa: BLE001
+                missing.append("%s (%s)" % (name, type(exc).__name__))
+        if missing:
+            raise RuntimeError("named by the surgeon and not importable from this install: %s"
+                               % ", ".join(missing))
+        from .surgeon import builders
+        if len(builders.BUILDERS) < 4:
+            raise RuntimeError("only %d output builder(s) registered; the surgeon claims four"
+                               % len(builders.BUILDERS))
+        return "%d module(s) + %d output builder(s), all importable" % (
+            len(surgeon.__all__), len(builders.BUILDERS))
+
+    def _the_surgeon_actually_ships():
+        """Run the whole repair road end to end, on a system built here with planted defects.
+
+        ⭐ WHY THIS AND NOT A CHEAPER CHECK: the surgeon's claim is not "it finds things", it is "a
+        broken system goes in and a working output comes out". Nothing short of running it can say
+        whether that is still true of the copy on your machine -- and `road.selftest()` asserts BOTH
+        directions, because it also requires that the originals were never modified.
+        """
+        import contextlib
+        import io as _io
+        from .surgeon import road
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = road.selftest()
+        if rc != 0:
+            tail = " | ".join(ln.strip() for ln in buf.getvalue().splitlines() if "FAIL" in ln)
+            raise RuntimeError("the repair road did not ship a graded output: %s" % (tail or "?"))
+        return "a broken system went in, a graded output shipped, the original was not touched"
+
     ck("the installed package is real, not an empty namespace", _real_module)
     ck("every public name is importable from the install", _public_api)
     ck("it finds a planted defect and stays quiet on a clean system", _finds_a_real_defect)
     ck("a target it cannot read is UNKNOWN, never clean", _unknown_is_never_clean)
+    ck("the repair road shipped in this install, not just the read-only stages",
+       _the_surgeon_is_in_the_install)
+    ck("it repairs a broken system and ships a graded output", _the_surgeon_actually_ships)
 
     for state, name, detail in checks:
         sys.stdout.write("  %-4s %s%s\n" % (state + ":", name, ("  -- " + detail) if detail else ""))
     sys.stdout.write("ragghost doctor: %s (%d check(s), %d failure(s))\n"
                      % ("PASS" if not failed else "FAIL", len(checks), failed))
     return 0 if not failed else 1
+
+
+def _fanout_cmd(cmd, rest):
+    """`ragghost fanout <shape> [--items N] [--cap N] [--fits-one-context]` and `ragghost shapes`.
+
+    ⭐ THESE TWO ARE THE ONLY PART OF THE LIBRARY HALF THAT WORKS FROM A COMMAND LINE, and that is
+    why they are here while `ranks_meaning` is not: the fan-out decision needs nothing but the shape
+    of the work, so you can ask it before you have written a line. Auditing a retrieval index needs a
+    function that queries YOUR index, which a shell cannot supply -- `tools/run_against_real_index.py`
+    and `examples/` are how that one is run.
+
+    The exit code IS the answer, and it is the same three everywhere in this tool:
+    0 fan out · 1 do not · 2 cannot tell (an unrecognised shape is never a yes).
+    """
+    import argparse
+
+    from .fanout import SHAPES, advise
+
+    if cmd == "shapes":
+        w = sys.stdout.write
+        w("SHAPES THAT DIVIDE -- fanning out is honest for these:\n")
+        for s in SHAPES:
+            if s.divides:
+                w("   %-22s %s\n" % (s.key, s.why))
+        w("\nSHAPES THAT DO NOT -- one context does these better:\n")
+        for s in SHAPES:
+            if not s.divides:
+                w("   %-22s %s\n" % (s.key, s.why))
+        w("\n  python3 -m ragghost fanout <shape> --items N [--cap N] [--fits-one-context]\n")
+        return 0
+
+    ap = argparse.ArgumentParser(prog="ragghost fanout",
+                                 description="Should this work be spread across agents at all?")
+    ap.add_argument("shape", help="the shape of the work -- `ragghost shapes` lists them")
+    ap.add_argument("--items", type=int, default=None, help="how many units of work")
+    ap.add_argument("--cap", type=int, default=None, help="the most workers you would dispatch")
+    ap.add_argument("--fits-one-context", action="store_true", dest="fits_one_context")
+    try:
+        a = ap.parse_args(rest)
+    except SystemExit:
+        # argparse exits 2 on a usage error, which is already this tool's "could not tell".
+        return 2
+    adv = advise(shape=a.shape, items=a.items, fits_one_context=a.fits_one_context, cap=a.cap)
+    sys.stdout.write(str(adv) + "\n")
+    return adv.code
 
 
 def _w(d, rel, text):
@@ -148,6 +253,12 @@ def _w(d, rel, text):
 
 
 def main(argv=None):
+    # FIRST, before anything writes a byte: a Windows console is cp1252 and cannot encode the `⛔`
+    # and `⚠` every report uses, so an unprepared stream turns an answer into a traceback. See
+    # `ragghost.console_safe` for the account -- including why the test suite could not see it.
+    from . import console_safe
+    console_safe()
+
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in ("-h", "--help", "help"):
         sys.stdout.write(USAGE)
@@ -155,6 +266,13 @@ def main(argv=None):
     cmd = argv[0]
     if cmd == "doctor":
         return doctor(argv[1:])
+    if cmd in ("fanout", "shapes"):
+        return _fanout_cmd(cmd, argv[1:])
+    if cmd == "surgeon":
+        # Imported here rather than at module scope: the surgeon is 18 modules, and a stranger
+        # running `ragghost scan` should not pay for the repair road they did not ask for.
+        from .surgeon.__main__ import main as surgeon_main
+        return surgeon_main(argv[1:])
     if cmd == "demo":
         from .demo import main as demo_main
         return demo_main(argv[1:])

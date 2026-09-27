@@ -29,6 +29,21 @@ jobs:
         run: python -m pip install --upgrade pip pytest hypothesis
       - name: Run the test suite
         run: python -m pytest -q tests
+      # ⛔ THE EXAMPLES RUN IN CI BECAUSE AN EXAMPLE IS THE FIRST THING A STRANGER TRIES, so one that
+      # has quietly stopped working fails in front of them rather than in front of us. It has already
+      # earned this: honest_index.py lost its `import random` in a rewrite, every query raised, and
+      # the tool -- correctly refusing to score a probe that raised -- said CANNOT TELL. The
+      # example's own assertion is what caught it.
+      - name: Every example still runs
+        run: python examples/run_all.py
+      # ⛔ THE README IS THE ONE FILE EVERY STRANGER READS AND THE ONE FILE NO TEST TOUCHES, so it
+      # rots silently and fails in front of the person you most wanted to impress. This types what it
+      # tells a stranger to type and checks the exit code each command is DOCUMENTED to return --
+      # several are supposed to be non-zero, and a checker asserting "exit 0" would call the tool
+      # broken for doing the thing it is being shown doing. It also re-counts the tests and
+      # re-measures coverage, because a number typed into a document cannot notice it went wrong.
+      - name: The README still describes this tool
+        run: python tools/readme_runs.py --tests
 
   install:
     # ⛔ THIS JOB EXISTS BECAUSE THE SUITE ABOVE CANNOT SEE THE FAILURES THAT MATTER MOST TO A
@@ -49,12 +64,33 @@ jobs:
       - name: Install the package the way a stranger would
         run: python -m pip install .
       - name: The console command exists and answers
+        # ⛔ THIS STEP IS THE ONE THAT FOUND THE cp1252 CRASH, and it found it because it is the only
+        # Windows step with no honest reason to tolerate a non-zero exit. `ragghost check .` below is
+        # `continue-on-error` because `check` exits 1 when it finds something -- which meant a CRASH
+        # and a FINDING produced the same green tick there for three days.
         run: ragghost --help
+      - name: A report prints on THIS console without crashing, markers and all
+        # Every report marks a finding with ⛔ and a caveat with ⚠, and a Windows console is cp1252,
+        # which has neither. The test suite cannot see this on its own: pytest captures output into a
+        # buffer with no code page, so testing removes the condition. tests/test_console_encoding.py
+        # builds a hostile stream to cover it portably; this step is the same question asked of the
+        # REAL console the runner gives us, which is the thing a stranger actually has.
+        run: python -c "import os,tempfile,ragghost; d=tempfile.mkdtemp(); open(os.path.join(d,'main.py'),'w').write('A=1\n'); open(os.path.join(d,'orphan.py'),'w').write('B=2\n'); ragghost.console_safe(); g=ragghost.build_graph(d); assert g.orphans, 'fixture printed no marker'; g.report()"
       # `cd ..` on purpose: from the repo root the source tree is importable whether or not the
       # install worked, so a doctor run there would pass on a broken wheel.
       - name: The install verifies itself, from outside the source tree
+        # Six checks, two of which run the whole repair road -- so this step alone fails if the
+        # wheel shipped the read-only stages and left ragghost.surgeon out of `packages`.
         run: ragghost doctor
         working-directory: ..
+      # ⛔ AND THE REPAIR HALF IS RUN FOR REAL, FROM THE INSTALL, ON THE EXAMPLE. The doctor builds
+      # its own synthetic system, which proves the road works but never touches examples/broken-shop
+      # -- and a stranger's first command is the one in the README, against that example. If the
+      # example stops shipping a store, this is what says so.
+      - name: It repairs the worked example and ships a graded storefront
+        run: ragghost surgeon examples/broken-shop --output landing --name "Aurora Goods" --out ../shipped
+      - name: The shipped storefront really exists
+        run: python -c "import os,sys; p=os.path.join('..','shipped','index.html'); sys.exit(0 if os.path.exists(p) else 'no index.html shipped')"
       - name: And it audits a real system -- itself -- without crashing
         run: ragghost check .
         # `check` exits 1 when it finds something, which is not a CI failure here: this step proves

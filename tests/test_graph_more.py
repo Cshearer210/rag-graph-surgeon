@@ -4,8 +4,124 @@
 import io
 
 
-from ragghost.graph import (build_graph, Graph, _py_module_map, _imports,
+from ragghost.graph import (build_graph, Graph, _py_module_map, _imports, _own_package,
                             _from_targets, _defined_names)
+
+
+# ── relative imports: the blind spot that made four wired files read as orphans ──
+#
+# Stage 2 used to drop every relative import, so a package's internal wiring was invisible and the
+# only edges it saw were the ones a test happened to make absolutely. Both directions below: the
+# must-fire half is that the edge now EXISTS and the file is not an orphan; the guard half is that
+# a genuinely un-imported module is still reported, so the fix did not simply stop the check firing.
+
+def test_a_dotted_relative_import_creates_an_edge(tree):
+    d = tree({
+        "pkg/__init__.py": "from . import sub\n",
+        "pkg/sub/__init__.py": "from . import worker\n",
+        "pkg/sub/worker.py": "def go():\n    return 1\n",
+    })
+    g = build_graph(d)
+    assert "pkg/sub/worker.py" in g.edges["pkg/sub/__init__.py"], \
+        "`from . import worker` inside a subpackage must be an edge, not nothing"
+    assert "pkg/sub/worker.py" not in g.orphans, \
+        "a module its own package imports is wired; calling it an orphan is the false positive"
+
+
+def test_from_dot_module_import_name_resolves(tree):
+    d = tree({
+        "pkg/__init__.py": "",
+        "pkg/caller.py": "from .helper import go\n\ngo()\n",
+        "pkg/helper.py": "def go():\n    return 1\n",
+    })
+    g = build_graph(d)
+    assert "pkg/helper.py" in g.edges["pkg/caller.py"]
+    assert "pkg/helper.py" not in g.orphans
+
+
+def test_a_parent_relative_import_walks_up_the_right_number_of_levels(tree):
+    d = tree({
+        "pkg/__init__.py": "",
+        "pkg/shared.py": "VALUE = 1\n",
+        "pkg/deep/__init__.py": "",
+        "pkg/deep/user.py": "from ..shared import VALUE\n",
+    })
+    g = build_graph(d)
+    assert "pkg/shared.py" in g.edges["pkg/deep/user.py"], \
+        "`..` must resolve to the PARENT package, not to the file's own"
+
+
+def test_an_unimported_module_is_still_an_orphan(tree):
+    """THE GUARD. Resolving relative imports must not make the orphan check unable to fire."""
+    d = tree({
+        "pkg/__init__.py": "from . import used\n",
+        "pkg/used.py": "X = 1\n",
+        "pkg/never_imported.py": "Y = 2\n",
+    })
+    g = build_graph(d)
+    assert "pkg/never_imported.py" in g.orphans
+    assert "pkg/used.py" not in g.orphans
+
+
+def test_own_package_distinguishes_an_init_from_a_module():
+    """An __init__ IS its package; a module lives IN its parent. One level of error here points
+    every relative import in the tree at a module that does not exist."""
+    assert _own_package("pkg/sub/__init__.py") == "pkg.sub"
+    assert _own_package("pkg/sub/mod.py") == "pkg.sub"
+    assert _own_package("top.py") == ""
+
+
+# ── the dangling-reference token: a dot-directory is a real path, not a missing one ──
+
+def test_a_dot_directory_reference_that_exists_is_not_flagged(tree):
+    """⛔ THE FALSE POSITIVE THIS GUARDS. The token pattern could not begin with a dot, so a comment
+    naming `.github/workflows/ci.yml` matched from `github` onward — a path that does not exist —
+    and because a file called `ci.yml` DID exist elsewhere it looked like a move nobody updated.
+    Every project documents a dot-directory, so it over-fired on a shape that is everywhere."""
+    d = tree({
+        "main.py": "# CALLED BY: .github/workflows/ci.yml\nA = 1\n",
+        "helper.py": "import main\n",
+        ".github/workflows/ci.yml": "name: CI\n",
+    })
+    g = build_graph(d)
+    assert not [t for _f, t in g.dangling if "ci.yml" in t], \
+        "a dot-directory path that EXISTS must not be reported as dangling: %r" % g.dangling
+
+
+def test_a_dot_directory_reference_that_is_genuinely_missing_IS_flagged(tree):
+    """THE MUST-FIRE HALF. Allowing the leading dot must not stop the check finding a real move.
+
+    ⚠ THE FIXTURE HAS TO CARRY THE EXACT BASENAME SOMEWHERE ELSE, and the first version of this test
+    did not — it planted `ci.yml` and expected a reference to `deploy.yml` to fire. It did not, and
+    the CODE was right: the near-miss condition is that a file of THAT basename exists elsewhere, so
+    the reference looks like a move nobody updated. A path with no sibling anywhere is an external or
+    example path and flagging it would be over-firing. The test was wrong, not the tool.
+    """
+    d = tree({
+        "main.py": "# CALLED BY: .github/workflows/deploy.yml\nA = 1\n",
+        "helper.py": "import main\n",
+        "ci/deploy.yml": "name: deploy\n",     # the same basename lives here -> it looks like a move
+    })
+    g = build_graph(d)
+    assert [t for _f, t in g.dangling if "deploy.yml" in t], \
+        "a dot-directory path that does NOT exist, whose basename lives elsewhere, is a dangling ref"
+
+
+def test_a_dot_slash_relative_reference_resolves(tree):
+    d = tree({
+        "main.py": "# see ./helper.py\nA = 1\n",
+        "helper.py": "import main\n",
+    })
+    assert not [t for _f, t in build_graph(d).dangling if "helper.py" in t]
+
+
+def test_imports_without_a_rel_skips_relative_rather_than_guessing(tree):
+    """Called with no repo-relative path there is nothing to resolve against, so the honest answer
+    is to skip -- never to invent a package name."""
+    d = tree({"pkg/__init__.py": "", "pkg/m.py": "from . import other\nimport os\n"})
+    got = _imports(_abs(d, "pkg/m.py"))          # deliberately no rel=
+    assert "os" in got
+    assert not any(m.startswith("pkg") for m in got)
 
 
 def _abs(root, rel):
