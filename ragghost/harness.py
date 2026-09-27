@@ -25,8 +25,15 @@ __all__ = ["harnesses", "Harnesses"]
 
 
 def _component(path):
-    """The harness a file belongs to: its top-level directory, or '(root)' for a top-level file."""
-    parts = path.split("/")
+    """The harness a file belongs to: its top-level directory, or '(root)' for a top-level file.
+
+    ⚠ `path` is a GRAPH NODE, which is an identifier, not a filename. `build_graph` normalises every
+    node with `.replace(os.sep, "/")` at the one place it creates them (graph.py, the os.walk), so
+    the separator here is forward slash on every platform by contract. Splitting on the platform
+    separator instead would be the bug: on Windows every node would then be one part and the whole
+    stage would collapse into a single `(root)` harness -- silently, with a clean exit code.
+    """
+    parts = path.split("/")  # path-id: ok -- a graph node, normalised where graph.py creates it
     return parts[0] if len(parts) > 1 else "(root)"
 
 

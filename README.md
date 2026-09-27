@@ -93,11 +93,26 @@ See the honest per-stage *Status* table near the bottom for what is built and wo
 library, and it never reaches out over the network for anything.
 
 ```bash
-git clone https://github.com/Cshearer210/rag-graph-surgeon
-cd rag-graph-surgeon
+pip install git+https://github.com/Cshearer210/rag-graph-surgeon
 
-python3 -m ragghost demo                          # the 15-second tour (self-contained)
-python3 -m ragghost scan /path/to/any/system      # then point it at a real system
+ragghost doctor                      # verify THIS install actually works, before trusting it
+ragghost demo                        # the 15-second tour (self-contained)
+ragghost scan /path/to/any/system    # then point it at a real system
+```
+
+`ragghost doctor` exists because a green CI badge tells you the *source* is fine and says nothing
+about the copy on your machine — and because a tool that audits other systems has no business
+asking to be trusted on its word. It checks the installed package is real rather than an empty
+namespace, that every name it publishes resolves, that a target it cannot read comes back as
+**UNKNOWN and never clean**, and — in both directions — that it finds a planted defect in a
+synthetic system and stays quiet on a clean one. It exits non-zero if any of that is untrue.
+
+Working on the tool itself (the module form still works everywhere the command does):
+
+```bash
+git clone https://github.com/Cshearer210/rag-graph-surgeon && cd rag-graph-surgeon
+python3 -m pytest -q
+python3 -m ragghost demo
 ```
 
 Every read-only stage leaves the target untouched. The one exception is stage 8 (`fix`), which is a

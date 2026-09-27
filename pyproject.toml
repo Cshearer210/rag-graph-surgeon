@@ -19,6 +19,12 @@ dependencies = []
 [project.optional-dependencies]
 test = ["pytest>=7", "hypothesis>=6", "coverage>=7"]
 
+# ⭐ THE CONSOLE SCRIPT. Added 2026-09-27: until then this installed cleanly and left a stranger
+# with nothing to type -- you had to already know to say `python3 -m ragghost`. Both entry points
+# call the same `main`, so nothing that already used the module form breaks.
+[project.scripts]
+ragghost = "ragghost.__main__:main"
+
 [project.urls]
 Repository = "https://github.com/Cshearer210/rag-graph-surgeon"
 

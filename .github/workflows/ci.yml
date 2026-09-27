@@ -6,11 +6,18 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # ⭐ THREE OPERATING SYSTEMS, not one. Added 2026-09-27 after a sibling repo shipped three
+    # Windows-only path defects that an ubuntu-only matrix could not see -- and after finding a real
+    # one here: stage 1 keyed its by_dir report on an unnormalised os.path.relpath, so it reported
+    # `ragghost\tests` on Windows while stages 2 and 4 reported `ragghost/tests`. One tool, two
+    # spellings for one directory, and the suite passed on each platform separately because nothing
+    # compared them. A matrix is how that stops being invisible.
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
@@ -19,6 +26,37 @@ jobs:
           python-version: ${{ matrix.python-version }}
       # The tool has no runtime dependencies; pytest is the only thing needed to run the suite.
       - name: Install test runner
-        run: python -m pip install --upgrade pip pytest
+        run: python -m pip install --upgrade pip pytest hypothesis
       - name: Run the test suite
         run: python -m pytest -q tests
+
+  install:
+    # ⛔ THIS JOB EXISTS BECAUSE THE SUITE ABOVE CANNOT SEE THE FAILURES THAT MATTER MOST TO A
+    # STRANGER. The tests run from the source tree, where imports work whether or not the package
+    # installs, and they cannot see that the wheel shipped no console command at all -- which was
+    # true here until 2026-09-27: it installed cleanly and left you with nothing to type.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install the package the way a stranger would
+        run: python -m pip install .
+      - name: The console command exists and answers
+        run: ragghost --help
+      # `cd ..` on purpose: from the repo root the source tree is importable whether or not the
+      # install worked, so a doctor run there would pass on a broken wheel.
+      - name: The install verifies itself, from outside the source tree
+        run: ragghost doctor
+        working-directory: ..
+      - name: And it audits a real system -- itself -- without crashing
+        run: ragghost check .
+        # `check` exits 1 when it finds something, which is not a CI failure here: this step proves
+        # the command runs end to end on a real tree. 2 (could not tell) IS a failure.
+        continue-on-error: true

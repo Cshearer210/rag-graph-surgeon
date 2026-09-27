@@ -93,9 +93,14 @@ def _suppressed_inline(finding, root):
     return bool(pat.search(head))
 
 
-def collect(root):
-    """Every finding, coded, from the real ranked plan. Reads only."""
-    p = plan(root)
+def collect(root, plan_result=None):
+    """Every finding, coded, from the real ranked plan. Reads only.
+
+    `plan_result` lets a caller that has already built the plan pass it in, so the whole system is
+    not walked twice. `check()` does exactly that, because it needs one more fact from the plan than
+    the findings carry: whether the target could be read AT ALL.
+    """
+    p = plan_result if plan_result is not None else plan(root)
     out = []
     for sev, kind, target, action in p.items:
         code = KIND_TO_CODE.get(kind, kind.upper())
@@ -152,15 +157,52 @@ def to_sarif(findings, root):
 
 
 class _CheckResult:
-    def __init__(self, findings, root, fmt):
+    def __init__(self, findings, root, fmt, assessed=True):
         self.findings = findings
         self.root = root
         self.fmt = fmt
+        self.assessed = assessed
 
     def exit_code(self):
+        """0 clean · 1 found something · 2 COULD NOT TELL.
+
+        ⛔ THE THIRD OUTCOME WAS MISSING HERE UNTIL 2026-09-27, AND THIS IS THE ONE COMMAND CI RUNS.
+        It was `1 if findings else 0`, so a target that could not be read at all -- a wrong path, a
+        directory with no permission, an empty checkout -- produced no findings and was reported
+        CLEAN, exit 0. Every one of the eight individual stages already returned 2 correctly; only
+        the aggregator that everything actually uses threw that away. So this tool broke, in its own
+        headline promise, in the single place where it mattered most:
+
+            "Exit codes, and they are the point:  2  IT COULD NOT TELL -- never treat this as clean"
+
+        A green CI badge over a mistyped path is the exact failure this tool exists to find in other
+        people's systems. Found by `ragghost doctor` on its first run.
+        """
+        if not self.assessed:
+            return 2
         return 1 if self.findings else 0
 
     def report(self, out=sys.stdout):
+        if not self.assessed:
+            # Said in every format, because a caller parsing JSON must not have to infer it from an
+            # empty findings list -- which is indistinguishable from a clean system.
+            if self.fmt == "json":
+                out.write(json.dumps({"tool": "rag-ghost", "root": os.path.abspath(self.root),
+                                      "status": "unknown", "could_not_look": True,
+                                      "findings": []}, indent=2) + "\n")
+            elif self.fmt == "sarif":
+                doc = {"$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+                       "version": "2.1.0",
+                       "runs": [{"tool": {"driver": {"name": "rag-ghost", "rules": []}},
+                                 "invocations": [{"executionSuccessful": False,
+                                                  "exitCode": 2}],
+                                 "results": []}]}
+                out.write(json.dumps(doc, indent=2) + "\n")
+            else:
+                out.write("CHECK  %s\n%s\n  COULD NOT LOOK -- nothing was read, so there is no\n"
+                          "  verdict. UNKNOWN, not clean. Check the path exists and is readable.\n"
+                          % (self.root, "=" * 60))
+            return
         if self.fmt == "json":
             out.write(to_json(self.findings, self.root))
         elif self.fmt == "sarif":
@@ -170,6 +212,12 @@ class _CheckResult:
 
 
 def check(root, fmt="text", extra_findings=None):
-    """The one command CI runs: built-in findings + any plugin findings, filtered, in one format."""
-    findings = _apply(collect(root) + list(extra_findings or []), root)
-    return _CheckResult(findings, root, fmt)
+    """The one command CI runs: built-in findings + any plugin findings, filtered, in one format.
+
+    The plan is built ONCE here and handed to `collect`, because this needs one fact the findings
+    cannot carry: `assessed` -- whether the target was readable at all. An empty findings list from
+    a system that was never read means the opposite of an empty list from a clean one.
+    """
+    p = plan(root)
+    findings = _apply(collect(root, plan_result=p) + list(extra_findings or []), root)
+    return _CheckResult(findings, root, fmt, assessed=bool(getattr(p, "assessed", True)))

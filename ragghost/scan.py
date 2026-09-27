@@ -158,7 +158,14 @@ def scan(root, skip=VENDORED):
         dirnames[:] = [d for d in dirnames if d not in skip]
         depth = dirpath.rstrip(os.sep).count(os.sep) - base_depth
         r.deepest = max(r.deepest, depth)
-        rel = os.path.relpath(dirpath, r.root)
+        # ⛔ NORMALISED ON PURPOSE -- a real Windows-only defect, fixed 2026-09-27. `rel` is a KEY
+        # in `by_dir` and is printed in the report, so it is an IDENTIFIER, never a filename to
+        # open -- and `os.path.relpath` hands back the PLATFORM's separator. Left alone, this stage
+        # reported `ragghost\tests` on Windows and `ragghost/tests` here, while stages 2 and 4 both
+        # already normalise and reported the forward-slashed form on both. One tool, two spellings
+        # for one directory, and every test passes on each platform separately because nothing ever
+        # compares the two. That is the whole shape of a portability bug that CI cannot see.
+        rel = os.path.relpath(dirpath, r.root).replace(os.sep, "/")
         for fn in filenames:
             p = os.path.join(dirpath, fn)
             try:

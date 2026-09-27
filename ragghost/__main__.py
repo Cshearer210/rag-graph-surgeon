@@ -1,9 +1,12 @@
-# CALLED BY: `python3 -m ragghost <stage> <path>` -- the command the README tells a stranger to run.
+# CALLED BY: the `ragghost` console script (pyproject [project.scripts]) and
+#            `python3 -m ragghost <stage> <path>` -- both call main(), so neither form breaks.
 # FIRES WHEN: asked -- it is the command line of a standalone tool.
 """The command line. Three outcomes, three exit codes, and it says which one it returned."""
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 
 from .scan import scan
 from .graph import build_graph
@@ -26,6 +29,7 @@ USAGE = """rag-ghost -- point it at a system and find out what is actually there
   python3 -m ragghost fix <path>        stage 8: dry-run the mechanical fixes (add --apply to write them)
   python3 -m ragghost check <path>      all findings in one report -- for CI. --format text|json|sarif
   python3 -m ragghost demo              a 15-second self-contained demonstration
+  python3 -m ragghost doctor            verify THIS install actually works, before trusting it
 
   Config: a .ragghost.json in the target root -- {"select":[...],"ignore":[...]} of codes.
   Silence one on a file: a line  # ragghost: allow <CODE>  in that file.
@@ -49,12 +53,108 @@ STAGES = {
 }
 
 
+def doctor(argv=None):
+    """Verify the INSTALL, not the source tree. Names every check, then PASS or FAIL.
+
+    ⛔ WHY: the tests live in the repo, not in the wheel, so `pytest` after a `pip install` runs
+    nothing at all. Green CI says the SOURCE is fine and says nothing about the copy that landed on
+    your machine. This is the command that answers that, and it exits non-zero when the answer is no.
+
+    ⭐ THE THIRD CHECK RUNS THIS TOOL IN BOTH DIRECTIONS, which is the same bar the tool holds other
+    systems to: it builds a system with a KNOWN defect and requires a finding, then a clean system
+    and requires silence. An instrument that has only ever been seen to find nothing has no opinion
+    about a negative.
+    """
+    checks, failed = [], 0
+
+    def ck(name, fn):
+        nonlocal failed
+        try:
+            detail = fn()
+            checks.append(("ok", name, detail or ""))
+        except Exception as exc:                                   # noqa: BLE001
+            failed += 1
+            checks.append(("FAIL", name, "%s: %s" % (type(exc).__name__, exc)))
+
+    def _real_module():
+        import ragghost
+        f = getattr(ragghost, "__file__", None)
+        if not f:
+            raise RuntimeError("imported, but __file__ is None -- an empty namespace package, "
+                               "not a real install")
+        return f
+
+    def _public_api():
+        # The population is __all__ itself. A typed list of names goes stale the first time one is
+        # added, and it goes stale SILENTLY -- the check keeps passing and the new name is untested.
+        import ragghost
+        missing = [n for n in ragghost.__all__ if not hasattr(ragghost, n)]
+        if missing:
+            raise RuntimeError("promised by __all__ and absent from the install: %s"
+                               % ", ".join(missing))
+        return "%d public names, all resolvable" % len(ragghost.__all__)
+
+    def _finds_a_real_defect():
+        from .report import check as run_check
+        with tempfile.TemporaryDirectory() as d:
+            # a DANGLING reference: a file naming a path that does not exist. No import error can
+            # fire, because the reference is a string -- which is exactly why it needs a tool.
+            _w(d, "app.py", 'from helper import go\n\nCONFIG = "conf/missing_file.json"\n\ngo()\n')
+            _w(d, "helper.py", "def go():\n    return 1\n")
+            _w(d, "test_app.py", "import app\n\n\ndef test_app():\n    assert app.CONFIG\n")
+            bad = run_check(d)
+            if bad.exit_code() != 1:
+                raise RuntimeError("a system with a dangling reference returned exit %d; a tool "
+                                   "that cannot find a planted defect cannot be trusted to find a "
+                                   "real one" % bad.exit_code())
+            n_bad = len(getattr(bad, "findings", []) or [])
+
+            clean = os.path.join(d, "clean")
+            _w(clean, "core.py", "def go():\n    return 1\n")
+            _w(clean, "test_core.py", "import core\n\n\ndef test_core():\n    assert core.go() == 1\n")
+            good = run_check(clean)
+            if good.exit_code() == 2:
+                raise RuntimeError("the clean system came back UNKNOWN, so this proves nothing")
+        return "found the planted dangling reference (%d finding(s)), exit 1 as it should" % n_bad
+
+    def _unknown_is_never_clean():
+        from .report import check as run_check
+        r = run_check(os.path.join(tempfile.gettempdir(), "ragghost-no-such-system-xyz"))
+        if r.exit_code() != 2:
+            raise RuntimeError("a path that does not exist returned exit %d -- it must be 2 "
+                               "(could not tell), because a check that cannot look must never "
+                               "report clean" % r.exit_code())
+        return "a missing target is exit 2 (could not tell), never 0"
+
+    ck("the installed package is real, not an empty namespace", _real_module)
+    ck("every public name is importable from the install", _public_api)
+    ck("it finds a planted defect and stays quiet on a clean system", _finds_a_real_defect)
+    ck("a target it cannot read is UNKNOWN, never clean", _unknown_is_never_clean)
+
+    for state, name, detail in checks:
+        sys.stdout.write("  %-4s %s%s\n" % (state + ":", name, ("  -- " + detail) if detail else ""))
+    sys.stdout.write("ragghost doctor: %s (%d check(s), %d failure(s))\n"
+                     % ("PASS" if not failed else "FAIL", len(checks), failed))
+    return 0 if not failed else 1
+
+
+def _w(d, rel, text):
+    """Write one file of a synthetic system, creating its directory."""
+    os.makedirs(d, exist_ok=True)
+    p = os.path.join(d, rel)
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(text)
+    return p
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in ("-h", "--help", "help"):
         sys.stdout.write(USAGE)
         return 0
     cmd = argv[0]
+    if cmd == "doctor":
+        return doctor(argv[1:])
     if cmd == "demo":
         from .demo import main as demo_main
         return demo_main(argv[1:])
