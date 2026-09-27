@@ -90,9 +90,16 @@ class Retriever:
         # meant to be absent from. A `while noise in self.index: noise += "q"` loop then quietly
         # mutated it until it was absent again, which meant the audit passed while measuring a
         # string nobody had written down. That is exactly the self-poisoning fixture
-        # `ranks_meaning.nonsense()` was written to prevent, so the two are now ONE definition with
+        # `ranks_meaning.gibberish()` was written to prevent, so the two are now ONE definition with
         # this as a reader rather than a second copy of the idea (nothing-ships-unwired 13-15).
-        noise = ranks_meaning.nonsense(n=1, words=1)[0]
+        #
+        # ⚠ `shape="wordlike"` IS REQUIRED HERE, not a preference. `_TOKEN` above matches
+        # `[A-Za-z_][A-Za-z0-9_]+`, so a `hex` probe beginning with a digit would lose its first
+        # character and a `punct` probe would be discarded entirely -- the probe would still be
+        # absent from the corpus and the audit would still pass, while measuring a string this
+        # function never constructed. `wordlike` is consonant-vowel pairs and always starts with a
+        # letter.
+        noise = ranks_meaning.gibberish(n=1, shape="wordlike")[0]
         top = self.query(noise, k=1)
         self.audit_noise = (noise, top[0][1] if top else 0.0)
 

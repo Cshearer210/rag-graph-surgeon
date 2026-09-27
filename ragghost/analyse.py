@@ -11,9 +11,9 @@ was pure overhead. This stage makes that decision explicitly, from the real depe
 and refuses the fan-out where the work does not actually divide.
 
 ⚠ THE SIBLING QUESTION LIVES IN `ragghost/fanout.py` AND IS NOT THIS ONE. This stage asks it about
-A CODEBASE and answers from the measured dependency graph. `fanout.decide()` asks it about A JOB
-somebody is about to run and answers from what the caller can state -- including CANNOT_TELL when
-they cannot, because a tool that guesses that for you turns an unfinished thought into a bill.
+A CODEBASE and answers from the measured dependency graph. `fanout.advise()` asks it about A JOB
+somebody is about to run and answers from the SHAPE they name -- returning CANNOT TELL for a shape
+it does not recognise, because the permissive answer there spends real money.
 Two questions, two answers, one name each.
 
 No dependencies, no network. It reads; it never writes to the target.

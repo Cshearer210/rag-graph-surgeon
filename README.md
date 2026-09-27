@@ -74,6 +74,54 @@ stranger would see, and anything that costs money is **surfaced, never done** �
 proof file as a decision waiting for you. In the example above that is 6 of the 9 issues, including
 a file with a syntax error and an orphaned payment handler, neither of which it will touch.
 
+## And two questions it asks about things it cannot see
+
+The stages read a codebase. These two take a **function** instead, so they work against whatever you
+already run:
+
+**Does your retrieval rank meaning, or noise?** Almost nobody tests this, because an index that
+ranks noise above meaning **does not raise an error** — it returns a passage, confidently, and every
+answer built on it looks exactly as trustworthy as a correct one.
+
+```python
+from ragghost import ranks_meaning
+print(ranks_meaning.judge(my_query_fn, my_known_questions))   # .code: 0 clean / 1 problem / 2 cannot tell
+```
+
+It feeds your index nonsense **generated at runtime** in three shapes — hex, word-shaped, and
+punctuation — and compares it against real questions whose answers you already know. The numbers it
+is built on are not invented: in a live index of 82,000+ chunks, random hexadecimal scored **0.735**
+while real questions scored **0.687**. Run
+[`examples/lying_index.py`](examples/lying_index.py) to see it caught, with no index required.
+
+Four traps it is built around, each one measured rather than imagined:
+
+- **Nonsense is generated, never a fixed list.** A hardcoded fixture is polluted the moment someone
+  writes those words into the corpus — including the file that explains the check.
+- **Median to median, never best to best.** One lucky real question above one unlucky nonsense
+  string says nothing, and taking the max of each is how the measurement flatters itself.
+- **A missing score is dropped, never read as zero.** An index that did not answer has not scored
+  low.
+- **An index that refuses nonsense outright is the best possible result, and it used to read as
+  "cannot tell"** — the same words as a failed measurement. *"Your index is excellent"* and *"I could
+  not judge your index"* are opposite answers, and collapsing them was this tool's own version of the
+  failure it is named after. See [`examples/refusing_index.py`](examples/refusing_index.py).
+
+**Should you fan out across agents at all?** Anchored on a real post-mortem: **86 agents, 17.0M
+tokens, 4.1 hours, 3 confirmed findings out of 26 raised** — 5.7M tokens per confirmed finding, for
+an answer one context would have reached for a fiftieth of it.
+
+```python
+from ragghost import fanout
+print(fanout.advise(shape="synthesis", items=26))   # DO NOT FAN OUT -- synthesis does not divide
+```
+
+*"It would be faster in parallel"* is not a reason, and it is the reason almost always given. The
+question is whether the pieces can be judged **without seeing each other**. Nine named shapes: four
+divide, five do not, and **an unrecognised shape is `cannot tell`, never a yes** — the permissive
+answer here spends real money. [`examples/should_i_fan_out.py`](examples/should_i_fan_out.py) runs it
+over six real dispatch decisions.
+
 ---
 
 ## How the diagnosis works
@@ -313,7 +361,8 @@ would be a poor place to start.
 ## Verify it yourself
 
 ```bash
-python3 -m pytest -q tests           # 360 tests, standard library only + pytest as the runner
+python3 -m pytest -q tests           # 435 tests, standard library only + pytest as the runner
+python3 examples/run_all.py          # every example, which CI also runs
 python3 -m ragghost demo             # all eight stages against a live, self-built broken system
 python3 examples/before_after_demo.py  # the repair half: broken to shipped, narrated
 ```
@@ -323,9 +372,10 @@ produce a passing result would share the exact blind spot this tool exists to re
 tests (via `hypothesis`, a dev-only extra) check the fan-out decision and the scanner's two-count
 agreement across generated inputs. Install the dev extras with `pip install -e ".[test]"`.
 
-**Coverage, measured rather than remembered** (`coverage run -m pytest && coverage report`): **87% of
-the package by line.** The eight read-only stages are **95–100% each**; the repair half is what
-brings the total down, and the honest breakdown is worth more than the single number:
+**Coverage, measured rather than remembered** (`coverage run -m pytest && coverage report`): **88% of
+the package by line.** The eight read-only stages are **95–100% each**, and so are the two library
+judgements (`ranks_meaning` and `fanout`, 98% each); the repair half is what brings the total down,
+and the honest breakdown is worth more than the single number:
 
 - One figure is a **measurement artefact, not a gap.** `ragghost/surgeon/builders/dashboard.py` reads
   **18%** while `tests/test_builders_ship.py` asserts it ships its page — because that test runs the

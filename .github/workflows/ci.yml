@@ -29,6 +29,13 @@ jobs:
         run: python -m pip install --upgrade pip pytest hypothesis
       - name: Run the test suite
         run: python -m pytest -q tests
+      # ⛔ THE EXAMPLES RUN IN CI BECAUSE AN EXAMPLE IS THE FIRST THING A STRANGER TRIES, so one that
+      # has quietly stopped working fails in front of them rather than in front of us. It has already
+      # earned this: honest_index.py lost its `import random` in a rewrite, every query raised, and
+      # the tool -- correctly refusing to score a probe that raised -- said CANNOT TELL. The
+      # example's own assertion is what caught it.
+      - name: Every example still runs
+        run: python examples/run_all.py
 
   install:
     # ⛔ THIS JOB EXISTS BECAUSE THE SUITE ABOVE CANNOT SEE THE FAILURES THAT MATTER MOST TO A
