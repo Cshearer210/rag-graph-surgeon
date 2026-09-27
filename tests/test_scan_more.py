@@ -41,11 +41,25 @@ def test_depth_zero_at_root(tree):
     assert scan.scan(d).deepest == 0
 
 
-def test_by_dir_uses_relative_paths(tree):
+def test_by_dir_is_keyed_by_a_forward_slashed_identifier(tree):
+    """`by_dir`'s keys are IDENTIFIERS, so they are forward-slashed on every platform.
+
+    ⛔ THIS ASSERTION USED TO READ `r.by_dir[os.path.join("pkg", "sub")]`, AND THAT WAS THE BUG
+    WRITTEN INTO THE TEST. `os.path.join` in an EXPECTED value makes the expectation platform-
+    dependent: on Linux it is `pkg/sub` and on Windows `pkg\\sub`, so the test agreed with whatever
+    the code did on the machine it ran on and could never notice the two disagreeing. Caught only
+    when the CI matrix gained Windows (2026-09-27): the fix that normalised the key turned this red
+    there and stayed green on Linux and macOS -- which is precisely the value of the matrix.
+
+    A path used to OPEN a file belongs to the platform. A path used as a dict KEY, compared, or
+    printed in a report is an identifier, and it is the same string everywhere.
+    """
     d = tree({"pkg/mod.py": "x", "pkg/sub/deep.py": "x"})
     r = scan.scan(d)
     assert r.by_dir["pkg"] == 1
-    assert r.by_dir[os.path.join("pkg", "sub")] == 1
+    assert r.by_dir["pkg/sub"] == 1
+    assert not any("\\" in k for k in r.by_dir), \
+        "a by_dir key carried a backslash: %r" % sorted(r.by_dir)
 
 
 # ── vendored exclusion is honoured and is customisable ──────────────────────
