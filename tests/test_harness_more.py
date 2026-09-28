@@ -109,7 +109,10 @@ def test_report_clean_message(tree):
     })
     buf = io.StringIO()
     harnesses(d).report(buf)
-    assert "Every code harness has a gate." in buf.getvalue()
+    # the clean message now says BOTH halves -- every harness gated, and every test in them able
+    # to fail. The sentence was widened deliberately when the cannot-fail finding was added, so
+    # this expectation moved with it rather than the message being bent back to fit the test.
+    assert "Every code harness has a gate, and every test in them can fail." in buf.getvalue()
 
 
 def test_report_empty_is_unknown():

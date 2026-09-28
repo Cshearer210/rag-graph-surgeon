@@ -107,6 +107,13 @@ def plan(root):
                         "the retriever ranks gibberish above zero -- its answers are untrustworthy"))
 
     h = harnesses(root)
+    for f, tname, line, shapes in h.hollow_gates:
+        # HIGH, and above an ungated harness on purpose: an ungated subsystem is honestly
+        # unguarded, while a test that cannot fail reports coverage it does not provide -- so
+        # nobody goes looking.
+        p.items.append(("HIGH", "cannot-fail", "%s at %s:%d" % (tname, f, line),
+                        "a test that cannot fail (%s) -- it is green forever and counts as "
+                        "coverage; make it able to fail, or delete it" % ", ".join(shapes)))
     for name in h.ungated:
         p.items.append(("HIGH", "no-gate", "harness %r (%d files)" % (name, len(h.groups[name]["files"])),
                         "a code subsystem no test guards -- add a gate before trusting it"))

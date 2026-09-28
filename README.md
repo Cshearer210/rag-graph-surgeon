@@ -134,7 +134,7 @@ Eight stages, run individually or all at once:
 | 2 | **GRAPH** | a dependency graph both ways — what breaks if this changes, what breaks if this moves, where one job is defined in two places, and which symbols no code anywhere names |
 | 3 | **ORGANIZE** | sort files into a tiered structure; index what must not move rather than moving it; flag a subsystem that was declared and never built |
 | 4 | **RETRIEVE** | build an offline retrieval layer so the system can answer questions about itself — and audit that layer, because a retriever that returns nothing looks like a system with nothing in it |
-| 5 | **HARNESS** | separate the system into subsystems and flag any with no gate, check or test guarding it |
+| 5 | **HARNESS** | separate the system into subsystems and flag any with no gate, check or test guarding it — and any test that *cannot fail*, which is worse than no test, because it reports coverage it does not provide |
 | 6 | **PLAN** | generate a harm-ranked plan of what to do, built from the real findings of stages 1–5 |
 | 7 | **ANALYSE** | decide whether the work divides into independent units worth fanning out — and refuse the fan-out where it would not pay off |
 | 8 | **FIX** | apply what can be applied mechanically, and prove each fix with a check that fires on its own |
@@ -161,15 +161,12 @@ This is a wiring-and-topology auditor, not a full static analyser. It works at f
 level and never executes the code it points at. These are the boundaries of its scope today —
 named plainly rather than left to look covered:
 
-- **Test-shape rot** — a test that asserts nothing, swallows its own exception, or is permanently
-  skipped.
 - **Config rot** — a config key nothing reads, or an environment variable referenced but set
   nowhere.
 - **Ghost pointers in prose** — a doc that names a script or path that does not exist.
 
 None of these are silently mishandled; they are simply out of scope, and each is a candidate for a
-future stage. Mutation-based checks (a test that passes because the code cannot make it fail) are
-also out of scope.
+future stage.
 
 See the honest per-stage *Status* table near the bottom for what is built and working today.
 
@@ -290,7 +287,12 @@ Exit `0` clean · `1` found something · `2` could-not-tell (never treat as clea
   `ragghost_plugin_*` module exposing `CHECKS = [fn]`. A plugin that raises is reported and skipped,
   never silently dropping the run to a clean result.
 
-Codes: `SCAN-DRIFT` · `GRAPH-ORPHAN` · `GRAPH-DANGLING` · `GRAPH-DUPLICATE` · `GRAPH-DEADSYM` · `ORG-MISFILED` · `ORG-HOLLOW` · `HARNESS-NOGATE` · `RETR-BLIND`.
+Codes: `SCAN-DRIFT` · `GRAPH-ORPHAN` · `GRAPH-DANGLING` · `GRAPH-DUPLICATE` · `GRAPH-DEADSYM` · `ORG-MISFILED` · `ORG-HOLLOW` · `HARNESS-NOGATE` · `HARNESS-CANNOTFAIL` · `RETR-BLIND`.
+
+**A deliberate smoke test has the `asserts-nothing` shape**, and there is no way to tell intent
+from syntax — so a test whose *name* says the check is that nothing blew up (`..._does_not_raise`,
+`..._never_crashes`) is left alone. That convention is read from the name because the name is where
+the author stated it. Anything else assertion-free is reported.
 
 **A note on `GRAPH-DEADSYM`, because it is the one finding here that reports rather than rules.** A
 library's public API is legitimately uncalled inside the library, and nothing in the syntax tells
@@ -338,7 +340,7 @@ found by running the tool on itself rather than by reading it.
 | 2 GRAPH | **working** — dependency graph both directions; dangling refs, orphans, duplicate definitions, and symbols nothing names |
 | 3 ORGANIZE | **working** — tiered index; what is load-bearing vs movable; misfiled files; hollow subsystems |
 | 4 RETRIEVE | **working** — offline tf-idf index; audits itself with a present probe and a noise probe |
-| 5 HARNESS | **working** — splits into subsystems; flags any with no gate |
+| 5 HARNESS | **working** — splits into subsystems; flags any with no gate, and any test that cannot fail |
 | 6 PLAN | **working** — a harm-ranked plan built from the real findings of stages 1–5 |
 | 7 ANALYSE | **working** — decides if the work divides; refuses a fan-out that would not pay off |
 | 8 FIX | **working** — dry-run by default; applies only the mechanical class and proves each edit |
@@ -364,7 +366,7 @@ would be a poor place to start.
 ## Verify it yourself
 
 ```bash
-python3 -m pytest -q tests           # 467 tests, standard library only + pytest as the runner
+python3 -m pytest -q tests           # 483 tests, standard library only + pytest as the runner
 python3 examples/run_all.py          # every example, which CI also runs
 python3 tools/readme_runs.py --tests # and every command ON THIS PAGE, with its documented exit code
 python3 -m ragghost demo             # all eight stages against a live, self-built broken system

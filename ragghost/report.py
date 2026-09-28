@@ -33,6 +33,7 @@ KIND_TO_CODE = {
     "dead-symbol": "GRAPH-DEADSYM",
     "retrieval": "RETR-BLIND",
     "no-gate": "HARNESS-NOGATE",
+    "cannot-fail": "HARNESS-CANNOTFAIL",
     "misfiled": "ORG-MISFILED",
     "hollow": "ORG-HOLLOW",
 }
