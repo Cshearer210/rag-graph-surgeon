@@ -118,4 +118,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install . pip-audit
       - name: Audit the installed dependency chain
-        run: python -m pip_audit --strict --progress-spinner off
+        # ⛔ NO `--strict`, AND THE REASON IS NOT LAXITY. `--strict` fails the run when
+        # pip-audit cannot RESOLVE a package on PyPI, and this package is not published -- so the
+        # job went red reporting "dependency not found on PyPI" as though it were an advisory.
+        # An actual vulnerability still exits non-zero without the flag, which is the property
+        # this job exists for.
+        run: python -m pip_audit --progress-spinner off
