@@ -29,9 +29,14 @@ KIND_TO_CODE = {
     "scan": "SCAN-DRIFT",
     "moved-ref": "GRAPH-DANGLING",
     "orphan": "GRAPH-ORPHAN",
+    "duplicate": "GRAPH-DUPLICATE",
+    "dead-symbol": "GRAPH-DEADSYM",
+    "ghost-instruction": "DOC-GHOSTRUN",
     "retrieval": "RETR-BLIND",
     "no-gate": "HARNESS-NOGATE",
+    "cannot-fail": "HARNESS-CANNOTFAIL",
     "misfiled": "ORG-MISFILED",
+    "hollow": "ORG-HOLLOW",
 }
 _SEV_SARIF = {"CRITICAL": "error", "HIGH": "error", "MEDIUM": "warning", "LOW": "note"}
 _PATH_RE = re.compile(r"([\w./\-]+\.[A-Za-z0-9]{1,6})")

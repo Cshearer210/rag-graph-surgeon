@@ -7,33 +7,15 @@ cards plus a table of the first data set it finds. Static HTML, no dependencies.
 from __future__ import annotations
 
 import html
-import json
 import os
 
-_SKIP = {".git", "node_modules", "__pycache__", ".venv", "dist", "build"}
+from .._common import load as _load, name_context, slurp as _slurp
+
 _DATA_CANDIDATES = ["metrics.json", "products.json", "orders.json", "data.json", "items.json"]
 
 
-def _find(ws, basename):
-    root_hit = os.path.join(ws, basename)
-    if os.path.exists(root_hit):
-        return root_hit
-    best, best_depth = None, 1 << 30
-    for dp, dn, fn in os.walk(ws):
-        dn[:] = [d for d in dn if d not in _SKIP and not d.startswith(".")]
-        if basename in fn:
-            depth = dp[len(ws):].count(os.sep)
-            if depth < best_depth:
-                best, best_depth = os.path.join(dp, basename), depth
-    return best
 
 
-def _load(ws, basename, default):
-    p = _find(ws, basename)
-    try:
-        return json.load(open(p, encoding="utf-8")) if p and os.path.exists(p) else default
-    except json.JSONDecodeError:
-        return default
 
 
 def _first_dataset(ws):
@@ -120,11 +102,6 @@ def rubric(scope):
     return [("has-index", has_index), ("has-cards", has_cards), ("title-shown", title_shown)]
 
 
-def grade_context(ws, scope):
-    cfg = _load(ws, "config.json", {})
-    return {"title": cfg.get("store_name") or scope.get("store_name") or "Operations Dashboard"}
+grade_context = name_context("title", "Operations Dashboard")
 
 
-def _slurp(o, name):
-    p = os.path.join(o, name)
-    return open(p, encoding="utf-8", errors="replace").read() if os.path.exists(p) else ""

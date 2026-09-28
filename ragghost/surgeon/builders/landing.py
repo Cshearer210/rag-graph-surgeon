@@ -5,33 +5,15 @@ variety" is demonstrated rather than asserted. Reads config.json (store_name/tag
 from __future__ import annotations
 
 import html
-import json
 import os
 
-
-_SKIP = {".git", "node_modules", "__pycache__", ".venv", "dist", "build"}
-
-
-def _find(ws, basename):
-    root_hit = os.path.join(ws, basename)
-    if os.path.exists(root_hit):
-        return root_hit
-    best, best_depth = None, 1 << 30
-    for dp, dn, fn in os.walk(ws):
-        dn[:] = [d for d in dn if d not in _SKIP and not d.startswith(".")]
-        if basename in fn:
-            depth = dp[len(ws):].count(os.sep)
-            if depth < best_depth:
-                best, best_depth = os.path.join(dp, basename), depth
-    return best
+from .._common import load as _load, name_context, slurp as _slurp
 
 
-def _load(ws, rel, default):
-    p = _find(ws, os.path.basename(rel))
-    try:
-        return json.load(open(p, encoding="utf-8")) if p and os.path.exists(p) else default
-    except json.JSONDecodeError:
-        return default
+
+
+
+
 
 
 def build(ws: str, scope, out_dir: str) -> dict:
@@ -75,11 +57,6 @@ def rubric(scope):
     return [("has-index", has_index), ("has-signup", has_signup), ("name-shown", name_shown)]
 
 
-def grade_context(ws, scope):
-    cfg = _load(ws, "config.json", {})
-    return {"name": cfg.get("store_name") or scope.get("store_name") or "Your Product"}
+grade_context = name_context("name", "Your Product")
 
 
-def _slurp(o, name):
-    p = os.path.join(o, name)
-    return open(p, encoding="utf-8", errors="replace").read() if os.path.exists(p) else ""

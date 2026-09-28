@@ -2,7 +2,7 @@
 # FIRES WHEN: asked -- a library module of a standalone tool, run by whoever downloaded it.
 """STAGE 2 -- GRAPH. What is wired to what, in both directions.
 
-⛔ THE FAILURE THIS STAGE EXISTS FOR: two of the quietest ways a self-built system rots are
+⛔ THE FAILURE THIS STAGE EXISTS FOR: three of the quietest ways a self-built system rots are
 invisible without a dependency graph.
 
   1. A file is built, is correct, passes its own tests, and NOTHING imports it. It reads as
@@ -10,6 +10,9 @@ invisible without a dependency graph.
   2. A file is renamed or moved, and something that named it by path now points at nothing --
      but the reference is a string, so no import error fires and every dashboard stays green.
      (A DANGLING reference: a path named in text that no longer exists.)
+  3. One job is defined in two files. Both are correct on their own, both are reachable, and a bug
+     fixed in one of them is still live in the other -- found later by whoever hits the bug that
+     was already fixed. (A DUPLICATE definition: one job, several doors.)
 
 So this stage builds the graph two ways and asks the two questions a graph exists to answer:
 what breaks if this file CHANGES (its dependents), and what breaks if this file MOVES (the
@@ -39,6 +42,9 @@ class Graph:
         self.edges = {}                    # file -> set(files it depends on)
         self.rev = {}                      # file -> set(files that depend on it)
         self.dangling = []                 # (file, named_path) references that resolve to nothing
+        self.duplicates = []               # (name, kind, [files], method) one job, several doors
+        self.dead_symbols = []             # (name, file, line, exported, [mention-only files])
+        self.ghost_instructions = []       # (doc, line, target) "run this" -> it is not there
         self.unparsed = []                 # files we could not read/parse -> UNKNOWN, not "no edges"
         self.scanned_files = 0             # denominator, from stage 1
 
@@ -83,7 +89,8 @@ class Graph:
         """0 clean, 1 found something, 2 could-not-tell. A graph over nothing is UNKNOWN."""
         if not self.nodes:
             return 2
-        if self.dangling or self.orphans:
+        if self.dangling or self.orphans or self.duplicates or self.dead_symbols \
+                or self.ghost_instructions:
             return 1
         return 0
 
@@ -115,12 +122,33 @@ class Graph:
               % len(self.dangling))
             for f, tgt in self.dangling[:12]:
                 w("    %s  ->  %s (missing)\n" % (f, tgt))
+        if self.duplicates:
+            w("\n  ⛔ %d SYMBOL(S) DEFINED IN TWO PLACES -- fix one and the other stays stale\n"
+              % len(self.duplicates))
+            for name, _kind, files, method in self.duplicates[:12]:
+                w("    %-22s [%s]\n" % (name, method))
+                for f in files:
+                    w("        %s\n" % f)
+        if self.ghost_instructions:
+            w("\n  ⛔ %d INSTRUCTION(S) TO RUN SOMETHING THAT IS NOT THERE\n"
+              % len(self.ghost_instructions))
+            for doc, line, target in self.ghost_instructions[:12]:
+                w("    %s:%d  says to run  %s (missing)\n" % (doc, line, target))
+        if self.dead_symbols:
+            w("\n  %d SYMBOL(S) NO CODE ANYWHERE NAMES -- a wired file, a symbol with no caller\n"
+              % len(self.dead_symbols))
+            for name, rel, line, exported, ment in self.dead_symbols[:12]:
+                w("    %-22s %s:%d%s\n"
+                  % (name, rel, line, "  (exported)" if exported else ""))
+                if ment:
+                    w("        only MENTIONED, never used, in: %s\n" % ", ".join(ment[:4]))
         if self.unparsed:
             w("\n  COULD NOT PARSE %d file(s) -- their edges are UNKNOWN, not absent\n"
               % len(self.unparsed))
             for p in self.unparsed[:5]:
                 w("    %s\n" % p)
-        if not self.orphans and not self.dangling:
+        if not self.orphans and not self.dangling and not self.duplicates \
+                and not self.dead_symbols and not self.ghost_instructions:
             w("\n  Every file has a dependent or is a legitimate entry point, and every named\n"
               "  path resolves. Nothing hidden at the wiring layer.\n")
 
@@ -206,6 +234,288 @@ def _imports(pyfile_abs, rel=None):
                     if a.name != "*":
                         mods.add(".".join(p for p in (full, a.name) if p))
     return mods
+
+
+def _top_level_defs(pyfile_abs):
+    """Every MODULE-LEVEL function, as (name, params, identifiers, shape). None if unparsable.
+
+    Module-level only, deliberately. A method or a nested helper shares its name with every other
+    implementation of the same interface, so walking the whole tree would flag every class that
+    implements a protocol -- the crying-wolf this tool refuses.
+    """
+    try:
+        with open(pyfile_abs, encoding="utf-8", errors="replace") as f:
+            tree = ast.parse(f.read())
+    except (OSError, SyntaxError, ValueError):
+        return None
+    out = []
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        a = node.args
+        params = tuple(p.arg for p in list(a.posonlyargs) + list(a.args) + list(a.kwonlyargs))
+        idents = set()
+        for st in node.body:
+            for n in ast.walk(st):
+                if isinstance(n, ast.Name):
+                    idents.add(n.id)
+                elif isinstance(n, ast.Attribute):
+                    idents.add(n.attr)
+                elif isinstance(n, ast.arg):
+                    idents.add(n.arg)
+        shape = "|".join(ast.dump(st, annotate_fields=False) for st in node.body)
+        out.append((node.name, params, frozenset(idents), shape))
+    return out
+
+
+def _duplicate_definitions(g, skip):
+    """One job defined in two files, so a fix to one leaves the other stale.
+
+    ⛔ THE FAILURE: the same symbol is defined in two places, both are reachable, and a bug fixed
+    in one of them is still live in the other. Nothing errors, both files look correct on their
+    own, and the stale copy is found by whoever hits the bug that was already fixed.
+
+    TWO METHODS, and NEITHER USES A TUNED NUMBER -- a threshold picked to fit the cases in front
+    of you is a control that cannot fail:
+
+      identical-body  the two bodies have the same normalized AST. A literal copy.
+      same-job        the same non-empty signature AND exactly the same set of identifiers, with a
+                      DIFFERENT AST. One job computed two ways -- the drifted copy, which is the
+                      more dangerous half because the two no longer even agree on the answer.
+
+    ⚠ THE THRESHOLD WAS TRIED FIRST AND MEASURED, NOT ASSUMED. Scoring the bodies by token overlap
+    put the planted drifted copy at 0.75 and a legitimate per-builder `rubric()` at 0.69, so any
+    cutoff that caught the defect also flagged the convention -- a 0.06 margin is not a rule, it is
+    a coincidence. Identifier-set EQUALITY separates them with no cutoff at all.
+
+    WHAT IT DELIBERATELY LEAVES ALONE, measured across four real repositories: a conventional
+    `main()` (nothing in common but the name), an interface implemented per module
+    (`raw_findings`, `rubric` -- same signature, different identifiers), and anything under
+    tests/, examples/ or docs/, where a repeated helper is the normal shape.
+
+    Each finding names the ACTUAL PAIR of files, never the whole set that shares the name. A
+    finding that says "these four files" when only two of them match sends the reader to the
+    wrong place, which is how a true finding still wastes an afternoon.
+    """
+    defs = {}
+    for n in sorted(g.nodes):
+        if not n.endswith(".py"):
+            continue
+        base = os.path.basename(n)
+        if base.startswith("test_") or base == "conftest.py":
+            continue
+        if any(n.startswith(s) or ("/" + s) in n for s in ("tests/", "examples/", "docs/")):
+            continue
+        if any(part in skip for part in n.split("/")):
+            continue
+        got = _top_level_defs(os.path.join(g.root, n))
+        if got is None:
+            if n not in g.unparsed:
+                g.unparsed.append(n)        # UNKNOWN, never "this file defines nothing"
+            continue
+        for name, params, idents, shape in got:
+            defs.setdefault(name, []).append((n, params, idents, shape))
+
+    for name in sorted(defs):
+        hits = defs[name]
+        # Group the files that match EACH OTHER, rather than emitting one row per pair: four
+        # identical copies are one finding about four files, not six findings about pairs of them.
+        # Only files actually in the group are named -- where two of four match and the other two
+        # are a genuine per-module implementation, the finding names the two.
+        for method in ("identical-body", "same-job"):
+            parent = {}
+
+            def find(x):
+                while parent[x] != x:
+                    parent[x] = parent[parent[x]]
+                    x = parent[x]
+                return x
+
+            for h in hits:
+                parent.setdefault(h[0], h[0])
+            for i in range(len(hits)):
+                for j in range(i + 1, len(hits)):
+                    a, b = hits[i], hits[j]
+                    if a[0] == b[0]:
+                        continue            # two defs of one name in ONE file is a different class
+                    if method == "identical-body":
+                        same = bool(a[3]) and a[3] == b[3]
+                    else:
+                        # a drifted copy: same job, different code. An identical body is already
+                        # reported by the other method and must not be counted twice.
+                        same = bool(a[1]) and a[1] == b[1] and a[2] == b[2] and a[3] != b[3]
+                    if same:
+                        ra, rb = find(a[0]), find(b[0])
+                        if ra != rb:
+                            parent[ra] = rb
+            groups = {}
+            for f in parent:
+                groups.setdefault(find(f), set()).add(f)
+            for members in groups.values():
+                if len(members) > 1:
+                    g.duplicates.append((name, "func", sorted(members), method))
+
+
+_WORDISH = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+_COMMENT = re.compile(r"#(.*)$", re.M)
+
+
+def _symbol_facts(pyfile_abs):
+    """(defs, refs, mentions, exported) for one file, or None if it cannot be parsed.
+
+    ⭐ THE DISTINCTION THE WHOLE CHECK RESTS ON, and it is free: a name inside a COMMENT or a
+    STRING LITERAL does not appear in the AST at all. So building the reference set from the
+    syntax separates a USE from a MENTION without a single special case -- which is exactly the
+    difference `grep` cannot see and why grep reports a name as used when nothing calls it.
+
+    An `__all__` entry is a string too, so EXPORTING a name is a promise about it, never a use
+    of it.
+    """
+    try:
+        with open(pyfile_abs, encoding="utf-8", errors="replace") as f:
+            src = f.read()
+        tree = ast.parse(src)
+    except (OSError, SyntaxError, ValueError):
+        return None
+    exported = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
+            if isinstance(node.value, (ast.List, ast.Tuple)):
+                exported |= {el.value for el in node.value.elts
+                             if isinstance(el, ast.Constant) and isinstance(el.value, str)}
+    defs = [(n.name, n.lineno, bool(n.decorator_list)) for n in tree.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+    refs, mentions = set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            refs.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            refs.add(node.attr)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            mentions |= set(_WORDISH.findall(node.value))
+    for m in _COMMENT.finditer(src):
+        mentions |= set(_WORDISH.findall(m.group(1)))
+    return defs, refs, mentions, exported
+
+
+def _dead_symbols(g, skip):
+    """A symbol that is defined, often exported, and referenced by no code anywhere.
+
+    ⛔ THE FAILURE: stage 2's orphan check works at FILE level, so a dead symbol inside a file
+    that IS imported is invisible to it. The file is wired, the module loads, the export is
+    declared -- and the function it names has no caller. Worse, `grep` says it is used, because
+    somebody wrote its name in a TODO or a hint string years ago.
+
+    ⚠ IT REPORTS, IT DOES NOT RULE, AND THAT IS DELIBERATE. A library's public API is legitimately
+    uncalled inside the library, and nothing in the syntax distinguishes that from dead code --
+    measured on two real repositories, where the only findings were an exported gate the README
+    documents and an exported helper meant for callers outside the package. So the finding is LOW
+    severity, it carries the evidence a reader needs (whether the name is exported, and which
+    files merely MENTION it), and it has its own code so a library can ignore the whole class in
+    its config. Pretending the tool can tell an API from a corpse would be the over-firing this
+    tool refuses.
+
+    A symbol in a file that is ALREADY reported as an orphan is skipped -- the file-level finding
+    says more, and saying both would be the same defect counted twice.
+    """
+    orphan_files = set(g.orphans)
+    per_file, all_refs = {}, set()
+    for n in sorted(g.nodes):
+        if not n.endswith(".py"):
+            continue
+        if any(part in skip for part in n.split("/")):
+            continue
+        got = _symbol_facts(os.path.join(g.root, n))
+        if got is None:
+            if n not in g.unparsed:
+                g.unparsed.append(n)     # UNKNOWN: never "this file references nothing"
+            continue
+        per_file[n] = got
+        all_refs |= got[1]
+
+    defined_in = {}
+    for n, (defs, _r, _m, _e) in per_file.items():
+        for name, lineno, decorated in defs:
+            defined_in.setdefault(name, []).append((n, lineno, decorated))
+
+    for name in sorted(defined_in):
+        sites = defined_in[name]
+        if len(sites) != 1:
+            continue                     # more than one definition is the duplicate class
+        rel, lineno, decorated = sites[0]
+        if name.startswith("__") or decorated:
+            continue                     # a dunder, or a decorator is its caller
+        base = os.path.basename(rel)
+        if base.startswith("test_") or base == "conftest.py":
+            continue
+        if any(rel.startswith(s) or ("/" + s) in rel for s in ("tests/", "examples/", "docs/")):
+            continue
+        if rel in orphan_files:
+            continue                     # the whole file is already reported
+        if name in all_refs:
+            continue                     # real code names it somewhere
+        exported = name in per_file[rel][3]
+        mention_only = sorted(f for f, (_d, _r, mentions, _e) in per_file.items()
+                              if f != rel and name in mentions)
+        g.dead_symbols.append((name, rel, lineno, exported, mention_only))
+
+
+_DOC_EXT = (".md", ".rst", ".txt")
+# a RUN INSTRUCTION: an interpreter or a shell prompt, then a path with a runnable extension
+_RUNNABLE_PATH = r"[\w./\-]+\.(?:py|sh|bash|js|mjs|ts|rb|pl)"
+# ⚠ THE BOUNDARY ALLOWS A BACKTICK OR A QUOTE, NOT JUST WHITESPACE, and leaving that out made the
+# bare `./script.sh` form undetectable in practice: in a markdown document a command is almost
+# always inside backticks, so the character before `./` is a backtick and never a space. Caught by
+# its own test rather than in the wild.
+_RUN_BOUNDARY = r"(?:^|[\s`'\"(])"
+_RUN_INSTRUCTION = re.compile(
+    _RUN_BOUNDARY + r"(?:\$\s*|>\s*)?(?:python3?|py|bash|sh|node|npx|ruby|perl)\s+("
+    + _RUNNABLE_PATH + r")"
+    r"|" + _RUN_BOUNDARY + r"(\./" + _RUNNABLE_PATH + r")", re.M)
+
+
+def _ghost_instructions(g, skip):
+    """A document that tells the reader to RUN something that is not there.
+
+    ⛔ THE FAILURE: a runbook, a README or a plan says "to verify, run this" and the thing it
+    names was never created, or was renamed. The reader follows the instruction, gets "no such
+    file", and stops trusting the rest of the document -- which is usually correct.
+
+    ⭐ WHY THIS IS NOT THE DANGLING-REFERENCE CHECK ABOVE, and the difference is the whole reason
+    it is worth having: that check deliberately leaves an ILLUSTRATIVE path alone. "Point it at
+    some/external/thing.py on your own machine" is not a defect, and flagging it was a real
+    over-fire this tool already fixed once. An INSTRUCTION is different in kind: it is a promise
+    the reader will act on. So this fires only on a path introduced by an interpreter or a shell
+    prompt -- `python x.py`, `bash x.sh`, `./x.py`, `$ node x.js` -- which is the reader being
+    told to run it.
+
+    A path carrying a placeholder (`<your-path>`, `{name}`, a glob) is a template, not an
+    instruction, and is left alone.
+    """
+    present = set(g.nodes) | {os.path.basename(n) for n in g.nodes}
+    for n in sorted(g.nodes):
+        if not n.lower().endswith(_DOC_EXT):
+            continue
+        if any(part in skip for part in n.split("/")):
+            continue
+        try:
+            with open(os.path.join(g.root, n), encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        except OSError:
+            continue                          # unreadable -> UNKNOWN, never "it names nothing"
+        seen = set()
+        for m in _RUN_INSTRUCTION.finditer(text):
+            target = (m.group(1) or m.group(2) or "").lstrip("./")
+            if not target or target in seen:
+                continue
+            if any(ch in target for ch in "<>{}*"):
+                continue                      # a template, not an instruction
+            if target in present or os.path.basename(target) in present:
+                continue
+            seen.add(target)
+            line = text.count("\n", 0, m.start()) + 1
+            g.ghost_instructions.append((n, line, target))
 
 
 def _from_targets(pyfile_abs):
@@ -387,4 +697,7 @@ def build_graph(root, skip=VENDORED):
                     g.rev[target].add(n)
     _dangling_refs(g, set(skip))
     _broken_submodule_refs(g)
+    _duplicate_definitions(g, set(skip))
+    _dead_symbols(g, set(skip))
+    _ghost_instructions(g, set(skip))
     return g

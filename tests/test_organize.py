@@ -22,6 +22,11 @@ def build(root, files):
             f.write(body)
 
 
+def idx_of(root):
+    """Just the hollow-package names, so a guard case reads as one line."""
+    return [d for d, _why in organize(root).hollow]
+
+
 class OrganizeTest(unittest.TestCase):
     def setUp(self):
         self.d = tempfile.mkdtemp()
@@ -79,6 +84,46 @@ class OrganizeTest(unittest.TestCase):
         self.assertIn("pkg/core.py", idx.tiers.get("core", []))     # imported by __main__
         self.assertIn("config.toml", idx.tiers.get("config", []))
         self.assertIn("tests/test_it.py", idx.tiers.get("test", []))
+
+    # ---- HOLLOW SUBSYSTEMS: must fire ----
+    def test_a_scaffolded_subsystem_with_no_code_is_found(self):
+        # nothing is broken and no import fails, which is exactly why it reads as fine forever
+        build(self.d, {
+            "analytics/__init__.py": "",
+            "billing/__init__.py": "",
+            "billing/charge.py": "def charge(x):\n    return x\n",
+        })
+        idx = organize(self.d)
+        self.assertEqual([d for d, _w in idx.hollow], ["analytics/"])
+        self.assertEqual(idx.exit_code(), 1)
+
+    def test_a_package_holding_only_a_docstring_is_still_hollow(self):
+        build(self.d, {"analytics/__init__.py": '"""Analytics. Coming soon."""\n'})
+        self.assertEqual(idx_of(self.d), ["analytics/"])
+
+    # ---- HOLLOW SUBSYSTEMS: must stay quiet ----
+    def test_a_package_with_modules_is_not_hollow(self):
+        build(self.d, {"pkg/__init__.py": "", "pkg/thing.py": "X = 1\n"})
+        self.assertEqual(idx_of(self.d), [])
+
+    def test_a_re_exporting_init_is_not_hollow(self):
+        # the __init__ IS the package's work -- flagging it would be crying wolf
+        build(self.d, {"pkg/__init__.py": "from other import thing\n__all__ = ['thing']\n"})
+        self.assertEqual(idx_of(self.d), [])
+
+    def test_a_package_whose_content_is_a_subpackage_is_not_hollow(self):
+        build(self.d, {"pkg/__init__.py": "", "pkg/sub/__init__.py": "",
+                       "pkg/sub/real.py": "def go():\n    return 1\n"})
+        self.assertEqual(idx_of(self.d), [])
+
+    def test_an_empty_test_package_is_not_hollow(self):
+        build(self.d, {"tests/__init__.py": "", "real.py": "X = 1\n"})
+        self.assertEqual(idx_of(self.d), [])
+
+    def test_an_unparseable_init_is_unknown_not_hollow(self):
+        # could-not-read must never become a finding about what the file contains
+        build(self.d, {"broken/__init__.py": "def (:\n"})
+        self.assertEqual(idx_of(self.d), [])
 
     # ---- COULD NOT TELL ----
     def test_empty_is_unknown(self):

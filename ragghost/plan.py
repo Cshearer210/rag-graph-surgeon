@@ -78,6 +78,32 @@ def plan(root):
     for n in g.orphans:
         p.items.append(("MEDIUM", "orphan", n,
                         "nothing depends on this file -- wire it in, or delete it if it is dead"))
+    for name, _kind, files, method in g.duplicates:
+        # HIGH, not CRITICAL: nothing is broken at this instant. It outranks an orphan because a
+        # stale second copy is found by whoever hits the bug that was already fixed -- later, and
+        # more expensively, than finding a file nobody calls.
+        p.items.append(("HIGH", "duplicate", "%s() in %s" % (name, ", ".join(files)),
+                        "one job defined in %d places (%s) -- fix one and the rest stay stale; "
+                        "keep one definition and have the others call it" % (len(files), method)))
+
+    for doc, line, target in g.ghost_instructions:
+        # CRITICAL alongside a moved reference: a reader is being told to run this, will try, and
+        # will stop trusting the document -- which is the correct response and hard to undo.
+        p.items.append(("CRITICAL", "ghost-instruction", "%s:%d says to run %s (missing)"
+                        % (doc, line, target),
+                        "the document tells a reader to run something that is not there -- "
+                        "create it, fix the path, or delete the instruction"))
+    for name, rel, line, exported, mention_only in g.dead_symbols:
+        # LOW, and on purpose: a library's public API is legitimately uncalled inside the library,
+        # and nothing in the syntax tells that apart from dead code. The item carries the evidence
+        # -- exported or not, and where the name is merely MENTIONED -- so the reader rules on it.
+        why = "no code anywhere names it"
+        if mention_only:
+            why += "; it appears only in a comment or a string in %s, so grep calls it used" \
+                   % ", ".join(mention_only[:3])
+        p.items.append(("LOW", "dead-symbol", "%s() at %s:%d%s"
+                        % (name, rel, line, " (exported)" if exported else ""),
+                        "%s -- call it, or delete it" % why))
 
     r = build_index(root)
     if r.audit_present is not None and not r.audit_present[2]:
@@ -88,11 +114,24 @@ def plan(root):
                         "the retriever ranks gibberish above zero -- its answers are untrustworthy"))
 
     h = harnesses(root)
+    for f, tname, line, shapes in h.hollow_gates:
+        # HIGH, and above an ungated harness on purpose: an ungated subsystem is honestly
+        # unguarded, while a test that cannot fail reports coverage it does not provide -- so
+        # nobody goes looking.
+        p.items.append(("HIGH", "cannot-fail", "%s at %s:%d" % (tname, f, line),
+                        "a test that cannot fail (%s) -- it is green forever and counts as "
+                        "coverage; make it able to fail, or delete it" % ", ".join(shapes)))
     for name in h.ungated:
         p.items.append(("HIGH", "no-gate", "harness %r (%d files)" % (name, len(h.groups[name]["files"])),
                         "a code subsystem no test guards -- add a gate before trusting it"))
 
     idx = organize(root)
+    for d, why in idx.hollow:
+        # HIGH because it is an UNKNOWN wearing a clean report: nothing is broken, nothing is
+        # missing, and nobody can say whether this subsystem's job is being done at all.
+        p.items.append(("HIGH", "hollow", d, "a declared subsystem with no code in it -- "
+                                             "build it, or delete the scaffold so it stops "
+                                             "reading as a working part of the system"))
     for f, why in idx.misfiled:
         p.items.append(("LOW", "misfiled", "%s (%s)" % (f, why),
                         "move it to where its kind belongs -- low risk, nothing references it"))
