@@ -9,22 +9,11 @@ from __future__ import annotations
 import json
 import os
 
-_SKIP = {".git", "node_modules", "__pycache__", ".venv", "dist", "build"}
+from .._common import find as _find, name_context
+
 _DATA_CANDIDATES = ["products.json", "items.json", "orders.json", "data.json", "metrics.json"]
 
 
-def _find(ws, basename):
-    root_hit = os.path.join(ws, basename)
-    if os.path.exists(root_hit):
-        return root_hit
-    best, best_depth = None, 1 << 30
-    for dp, dn, fn in os.walk(ws):
-        dn[:] = [d for d in dn if d not in _SKIP and not d.startswith(".")]
-        if basename in fn:
-            depth = dp[len(ws):].count(os.sep)
-            if depth < best_depth:
-                best, best_depth = os.path.join(dp, basename), depth
-    return best
 
 
 def _first_collection(ws):
@@ -139,5 +128,4 @@ def rubric(scope):
     return [("has-tool", has_tool), ("tool-compiles", tool_compiles), ("has-commands", has_commands)]
 
 
-def grade_context(ws, scope):
-    return {"name": scope.get("store_name") or "tool"}
+grade_context = name_context("name", "tool")

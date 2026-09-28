@@ -10,32 +10,13 @@ import html
 import json
 import os
 
-_SKIP = {".git", "node_modules", "__pycache__", ".venv", "dist", "build"}
+from .._common import load as _load, name_context
+
 _DATA_CANDIDATES = ["products.json", "orders.json", "items.json", "metrics.json", "data.json"]
 
 
-def _find(ws, basename):
-    root_hit = os.path.join(ws, basename)
-    if os.path.exists(root_hit):
-        return root_hit
-    best, best_depth = None, 1 << 30
-    for dp, dn, fn in os.walk(ws):
-        dn[:] = [d for d in dn if d not in _SKIP and not d.startswith(".")]
-        if basename in fn:
-            depth = dp[len(ws):].count(os.sep)
-            if depth < best_depth:
-                best, best_depth = os.path.join(dp, basename), depth
-    return best
 
 
-def _load(ws, basename):
-    p = _find(ws, basename)
-    if not p or not os.path.exists(p):
-        return None
-    try:
-        return json.load(open(p, encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
 
 
 def _collections(ws):
@@ -112,7 +93,4 @@ def rubric(scope):
     return [("has-manifest", has_manifest), ("manifest-valid", manifest_valid), ("has-index", has_index)]
 
 
-def grade_context(ws, scope):
-    cfg = _load(ws, "config.json") or {}
-    return {"title": (cfg.get("store_name") if isinstance(cfg, dict) else None)
-            or scope.get("store_name") or "API"}
+grade_context = name_context("title", "API")

@@ -12,9 +12,7 @@ import json
 import os
 import re
 
-
-def _read(root, rel):
-    return open(os.path.join(root, rel), encoding="utf-8", errors="replace").read()
+from ._common import read_text as _read
 
 
 def _write(root, rel, text):

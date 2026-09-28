@@ -13,11 +13,13 @@ import re
 from dataclasses import dataclass, field
 
 from . import graph as graph_mod
+from ._common import read_text as _read
 
 
 @dataclass
 class Diagnosis:
-    kind: str                 # broken-json | broken-import | syntax-error | missing-config-field | unwired | dead-path-ref
+    kind: str                 # broken-json | broken-import | syntax-error | missing-config-field
+                              # | unwired | dead-path-ref | duplicate-definition
     file: str                 # relpath in the target/workspace
     detail: str
     fixer: str | None = None  # name of a fix.py fixer, or None -> surface to owner
@@ -28,8 +30,6 @@ class Diagnosis:
         return "[%s] %-18s %-24s %s" % (tag, self.kind, self.file[:24], self.detail[:60])
 
 
-def _read(root, rel):
-    return open(os.path.join(root, rel), encoding="utf-8", errors="replace").read()
 
 
 def broken_json(root, index) -> list:
@@ -153,6 +153,29 @@ def unwired(root, index) -> list:
             for rel in graph_mod.orphans(index, g)]
 
 
+def duplicate_definitions(root, index) -> list:
+    """One job defined in two files -- fix one and the other stays stale.
+
+    ⛔ THIS STAGE HAS ADVERTISED THIS SINCE IT WAS WRITTEN AND NEVER LOOKED FOR IT. The package
+    docstring lists "duplicate definitions" among what DIAGNOSE finds; `run_all` never called
+    anything that did. An overclaim in a docstring is worse than a gap, because every reader --
+    including the next session to work here -- stops looking for what it says is covered.
+
+    SURFACED, never auto-fixed: choosing WHICH copy survives, and whether the other should call it
+    or be deleted, is the owner's call. The safety rule at the top of fix.py is that a fixer never
+    deletes.
+    """
+    from ..graph import build_graph                     # stage 2 holds the one definition
+    out = []
+    for name, _kind, files, method in build_graph(root).duplicates:
+        out.append(Diagnosis(
+            "duplicate-definition", files[0],
+            "%s() is defined in %d places (%s): %s -- fix one and the rest stay stale"
+            % (name, len(files), method, ", ".join(files)),
+            None, {"symbol": name, "files": files, "method": method}))
+    return out
+
+
 _STDLIB = set("os sys re json math time datetime pathlib typing collections itertools functools "
               "subprocess argparse dataclasses io ast glob shutil tempfile unittest hashlib "
               "random string textwrap urllib http logging enum abc contextlib".split())
@@ -242,6 +265,7 @@ def run_all(root, index, required_fields: dict | None = None) -> list:
     ds += syntax_errors(root, index)
     ds += broken_imports(root, index)
     ds += unwired(root, index)
+    ds += duplicate_definitions(root, index)
     ds += dead_path_reference(root, index)
     if required_fields:
         ds += missing_config_field(root, index, required_fields)
@@ -285,6 +309,8 @@ def selftest() -> int:
         any(x.kind == "missing-config-field" and x.data.get("field") == "store_name" for x in ds))
     chk("finds unwired orphan (surfaced)",
         any(x.kind == "unwired" and "orphan_helper.py" in x.file for x in ds))
+    chk("does NOT invent a duplicate where every symbol is defined once",
+        not any(x.kind == "duplicate-definition" for x in ds))
     chk("does NOT flag stdlib/installed imports as broken",
         not any(x.kind == "broken-import" and x.data.get("wrong") == "os" for x in ds))
     chk("finds a config path pointing at a renamed file (fixable, unique match)",
