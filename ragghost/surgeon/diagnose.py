@@ -117,8 +117,14 @@ def _locate(root, rel):
     for dp, dn, fn in os.walk(root):
         dn[:] = [d for d in dn if d not in _CFG_SKIP and not d.startswith(".")]
         if base in fn:
-            found = os.path.relpath(os.path.join(dp, base), root)
-            depth = found.count(os.sep)
+            # ⛔ FORWARD SLASHES ALWAYS, BECAUSE THIS VALUE IS AN IDENTITY. It is returned
+            # and compared against paths produced elsewhere; on Windows a backslashed spelling of
+            # the same file compares unequal to a forward-slashed one, so one defect reads as two
+            # -- the exact class that cost a sibling repo three commits.
+            found = os.path.relpath(os.path.join(dp, base), root).replace(os.sep, "/")
+            # and the depth counts the separator this string ACTUALLY carries, not os.sep: the
+            # two lines have to change together or the normalisation breaks the depth on Windows
+            depth = found.count("/")
             if depth < best_depth:
                 best, best_depth = found, depth
     return best
@@ -218,7 +224,9 @@ def _basename_map(root):
     for dp, dn, fn in os.walk(root):
         dn[:] = [d for d in dn if d not in _CFG_SKIP and not d.startswith(".")]
         for f in fn:
-            m.setdefault(f, []).append(os.path.relpath(os.path.join(dp, f), root))
+            # the same reason: these are compared with paths from other stages
+            m.setdefault(f, []).append(
+                os.path.relpath(os.path.join(dp, f), root).replace(os.sep, "/"))
     return m
 
 

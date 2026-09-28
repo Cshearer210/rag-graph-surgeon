@@ -116,7 +116,9 @@ def run(show_open=False):
             round(score * 100), npass, len(checks), "PASS" if shipped else "below bar")
     _line("   SHIPPED: a working storefront%s" % grade_str)
     store_index = os.path.join(out, "index.html")
-    files = sorted(os.path.relpath(os.path.join(dp, f), out)
+    # forward-slashed so the example prints the same thing on every platform -- an example
+    # whose output changes shape on Windows is an example a stranger cannot compare to the README
+    files = sorted(os.path.relpath(os.path.join(dp, f), out).replace(os.sep, "/")
                    for dp, _dn, fn in os.walk(out) for f in fn)
     _line("      %s" % ", ".join(f for f in files if f.endswith((".html", ".css", ".js"))))
     _line()
