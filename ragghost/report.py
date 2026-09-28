@@ -31,6 +31,7 @@ KIND_TO_CODE = {
     "orphan": "GRAPH-ORPHAN",
     "duplicate": "GRAPH-DUPLICATE",
     "dead-symbol": "GRAPH-DEADSYM",
+    "ghost-instruction": "DOC-GHOSTRUN",
     "retrieval": "RETR-BLIND",
     "no-gate": "HARNESS-NOGATE",
     "cannot-fail": "HARNESS-CANNOTFAIL",

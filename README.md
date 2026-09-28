@@ -163,10 +163,19 @@ named plainly rather than left to look covered:
 
 - **Config rot** — a config key nothing reads, or an environment variable referenced but set
   nowhere.
-- **Ghost pointers in prose** — a doc that names a script or path that does not exist.
-
 None of these are silently mishandled; they are simply out of scope, and each is a candidate for a
 future stage.
+
+**Config rot was measured and deliberately left out, rather than shipped noisy.** A key in a
+config file that nothing reads is a real defect, and a detector for it was built and swept over
+four real repositories before being discarded: it produced **51 findings in one of them**, and
+every one was either a *data* file (a measurement record whose keys are its content) or a manifest
+owned by another tool (a GitHub Action, an editor's settings). Nothing in a file's extension tells
+config apart from data, and an exclusion list of foreign manifests is a list of what somebody
+remembered. The same went for an environment variable read but set nowhere: every real finding was
+a variable the *user* is supposed to set, which is set nowhere in the repo by design. Over-firing
+is worse than a gap — a checker that flags correct work gets switched off, and then it protects
+nothing.
 
 See the honest per-stage *Status* table near the bottom for what is built and working today.
 
@@ -287,7 +296,7 @@ Exit `0` clean · `1` found something · `2` could-not-tell (never treat as clea
   `ragghost_plugin_*` module exposing `CHECKS = [fn]`. A plugin that raises is reported and skipped,
   never silently dropping the run to a clean result.
 
-Codes: `SCAN-DRIFT` · `GRAPH-ORPHAN` · `GRAPH-DANGLING` · `GRAPH-DUPLICATE` · `GRAPH-DEADSYM` · `ORG-MISFILED` · `ORG-HOLLOW` · `HARNESS-NOGATE` · `HARNESS-CANNOTFAIL` · `RETR-BLIND`.
+Codes: `SCAN-DRIFT` · `GRAPH-ORPHAN` · `GRAPH-DANGLING` · `GRAPH-DUPLICATE` · `GRAPH-DEADSYM` · `DOC-GHOSTRUN` · `ORG-MISFILED` · `ORG-HOLLOW` · `HARNESS-NOGATE` · `HARNESS-CANNOTFAIL` · `RETR-BLIND`.
 
 **A deliberate smoke test has the `asserts-nothing` shape**, and there is no way to tell intent
 from syntax — so a test whose *name* says the check is that nothing blew up (`..._does_not_raise`,
@@ -366,7 +375,7 @@ would be a poor place to start.
 ## Verify it yourself
 
 ```bash
-python3 -m pytest -q tests           # 483 tests, standard library only + pytest as the runner
+python3 -m pytest -q tests           # 489 tests, standard library only + pytest as the runner
 python3 examples/run_all.py          # every example, which CI also runs
 python3 tools/readme_runs.py --tests # and every command ON THIS PAGE, with its documented exit code
 python3 -m ragghost demo             # all eight stages against a live, self-built broken system

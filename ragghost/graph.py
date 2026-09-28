@@ -44,6 +44,7 @@ class Graph:
         self.dangling = []                 # (file, named_path) references that resolve to nothing
         self.duplicates = []               # (name, kind, [files], method) one job, several doors
         self.dead_symbols = []             # (name, file, line, exported, [mention-only files])
+        self.ghost_instructions = []       # (doc, line, target) "run this" -> it is not there
         self.unparsed = []                 # files we could not read/parse -> UNKNOWN, not "no edges"
         self.scanned_files = 0             # denominator, from stage 1
 
@@ -88,7 +89,8 @@ class Graph:
         """0 clean, 1 found something, 2 could-not-tell. A graph over nothing is UNKNOWN."""
         if not self.nodes:
             return 2
-        if self.dangling or self.orphans or self.duplicates or self.dead_symbols:
+        if self.dangling or self.orphans or self.duplicates or self.dead_symbols \
+                or self.ghost_instructions:
             return 1
         return 0
 
@@ -127,6 +129,11 @@ class Graph:
                 w("    %-22s [%s]\n" % (name, method))
                 for f in files:
                     w("        %s\n" % f)
+        if self.ghost_instructions:
+            w("\n  ⛔ %d INSTRUCTION(S) TO RUN SOMETHING THAT IS NOT THERE\n"
+              % len(self.ghost_instructions))
+            for doc, line, target in self.ghost_instructions[:12]:
+                w("    %s:%d  says to run  %s (missing)\n" % (doc, line, target))
         if self.dead_symbols:
             w("\n  %d SYMBOL(S) NO CODE ANYWHERE NAMES -- a wired file, a symbol with no caller\n"
               % len(self.dead_symbols))
@@ -141,7 +148,7 @@ class Graph:
             for p in self.unparsed[:5]:
                 w("    %s\n" % p)
         if not self.orphans and not self.dangling and not self.duplicates \
-                and not self.dead_symbols:
+                and not self.dead_symbols and not self.ghost_instructions:
             w("\n  Every file has a dependent or is a legitimate entry point, and every named\n"
               "  path resolves. Nothing hidden at the wiring layer.\n")
 
@@ -454,6 +461,63 @@ def _dead_symbols(g, skip):
         g.dead_symbols.append((name, rel, lineno, exported, mention_only))
 
 
+_DOC_EXT = (".md", ".rst", ".txt")
+# a RUN INSTRUCTION: an interpreter or a shell prompt, then a path with a runnable extension
+_RUNNABLE_PATH = r"[\w./\-]+\.(?:py|sh|bash|js|mjs|ts|rb|pl)"
+# ⚠ THE BOUNDARY ALLOWS A BACKTICK OR A QUOTE, NOT JUST WHITESPACE, and leaving that out made the
+# bare `./script.sh` form undetectable in practice: in a markdown document a command is almost
+# always inside backticks, so the character before `./` is a backtick and never a space. Caught by
+# its own test rather than in the wild.
+_RUN_BOUNDARY = r"(?:^|[\s`'\"(])"
+_RUN_INSTRUCTION = re.compile(
+    _RUN_BOUNDARY + r"(?:\$\s*|>\s*)?(?:python3?|py|bash|sh|node|npx|ruby|perl)\s+("
+    + _RUNNABLE_PATH + r")"
+    r"|" + _RUN_BOUNDARY + r"(\./" + _RUNNABLE_PATH + r")", re.M)
+
+
+def _ghost_instructions(g, skip):
+    """A document that tells the reader to RUN something that is not there.
+
+    ⛔ THE FAILURE: a runbook, a README or a plan says "to verify, run this" and the thing it
+    names was never created, or was renamed. The reader follows the instruction, gets "no such
+    file", and stops trusting the rest of the document -- which is usually correct.
+
+    ⭐ WHY THIS IS NOT THE DANGLING-REFERENCE CHECK ABOVE, and the difference is the whole reason
+    it is worth having: that check deliberately leaves an ILLUSTRATIVE path alone. "Point it at
+    some/external/thing.py on your own machine" is not a defect, and flagging it was a real
+    over-fire this tool already fixed once. An INSTRUCTION is different in kind: it is a promise
+    the reader will act on. So this fires only on a path introduced by an interpreter or a shell
+    prompt -- `python x.py`, `bash x.sh`, `./x.py`, `$ node x.js` -- which is the reader being
+    told to run it.
+
+    A path carrying a placeholder (`<your-path>`, `{name}`, a glob) is a template, not an
+    instruction, and is left alone.
+    """
+    present = set(g.nodes) | {os.path.basename(n) for n in g.nodes}
+    for n in sorted(g.nodes):
+        if not n.lower().endswith(_DOC_EXT):
+            continue
+        if any(part in skip for part in n.split("/")):
+            continue
+        try:
+            with open(os.path.join(g.root, n), encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        except OSError:
+            continue                          # unreadable -> UNKNOWN, never "it names nothing"
+        seen = set()
+        for m in _RUN_INSTRUCTION.finditer(text):
+            target = (m.group(1) or m.group(2) or "").lstrip("./")
+            if not target or target in seen:
+                continue
+            if any(ch in target for ch in "<>{}*"):
+                continue                      # a template, not an instruction
+            if target in present or os.path.basename(target) in present:
+                continue
+            seen.add(target)
+            line = text.count("\n", 0, m.start()) + 1
+            g.ghost_instructions.append((n, line, target))
+
+
 def _from_targets(pyfile_abs):
     """Level-0 `from M import n` pairs (M, n), for spotting a submodule that has gone missing.
     None if the file cannot be parsed -- its references are UNKNOWN, never assumed present."""
@@ -635,4 +699,5 @@ def build_graph(root, skip=VENDORED):
     _broken_submodule_refs(g)
     _duplicate_definitions(g, set(skip))
     _dead_symbols(g, set(skip))
+    _ghost_instructions(g, set(skip))
     return g

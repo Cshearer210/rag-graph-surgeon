@@ -268,6 +268,44 @@ class GraphTest(unittest.TestCase):
         found = {n for n, _f, _l, _e, _m in build_graph(self.d).dead_symbols}
         self.assertNotIn("go", found)
 
+    # ---- GHOST INSTRUCTIONS: must fire ----
+    def test_a_doc_telling_you_to_run_a_missing_script_is_found(self):
+        build(self.d, {
+            "RUNBOOK.md": "# Runbook\nTo verify, run `python scripts/can_i_see.py --selftest`\n",
+            "real.py": "X = 1\n",
+        })
+        g = build_graph(self.d)
+        self.assertEqual([(d, t) for d, _l, t in g.ghost_instructions],
+                         [("RUNBOOK.md", "scripts/can_i_see.py")])
+
+    def test_a_dot_slash_instruction_is_found(self):
+        build(self.d, {"README.md": "Run `./tools/setup.sh` first.\n", "real.py": "X = 1\n"})
+        self.assertEqual([t for _d, _l, t in build_graph(self.d).ghost_instructions],
+                         ["tools/setup.sh"])
+
+    # ---- GHOST INSTRUCTIONS: must stay quiet ----
+    def test_an_instruction_naming_a_file_that_exists_is_quiet(self):
+        build(self.d, {"README.md": "Run `python tools/go.py` to start.\n",
+                       "tools/go.py": "X = 1\n"})
+        self.assertEqual(build_graph(self.d).ghost_instructions, [])
+
+    def test_an_illustrative_path_is_not_an_instruction(self):
+        # the existing dangling check deliberately leaves this alone, and so does this one
+        build(self.d, {"README.md": "Point it at `some/external/thing.py` on your machine.\n",
+                       "real.py": "X = 1\n"})
+        self.assertEqual(build_graph(self.d).ghost_instructions, [])
+
+    def test_a_template_with_a_placeholder_is_not_an_instruction(self):
+        build(self.d, {"README.md": "Run `python <your-script>.py` and `python {name}.py`.\n",
+                       "real.py": "X = 1\n"})
+        self.assertEqual(build_graph(self.d).ghost_instructions, [])
+
+    def test_an_instruction_matched_by_basename_elsewhere_is_quiet(self):
+        # a doc may name a script by a path relative to somewhere else; the file IS there
+        build(self.d, {"docs/guide.md": "Run `python run_all.py`.\n",
+                       "tools/run_all.py": "X = 1\n"})
+        self.assertEqual(build_graph(self.d).ghost_instructions, [])
+
     # ---- COULD NOT TELL ----
     def test_empty_tree_is_unknown(self):
         g = build_graph(self.d)

@@ -86,6 +86,13 @@ def plan(root):
                         "one job defined in %d places (%s) -- fix one and the rest stay stale; "
                         "keep one definition and have the others call it" % (len(files), method)))
 
+    for doc, line, target in g.ghost_instructions:
+        # CRITICAL alongside a moved reference: a reader is being told to run this, will try, and
+        # will stop trusting the document -- which is the correct response and hard to undo.
+        p.items.append(("CRITICAL", "ghost-instruction", "%s:%d says to run %s (missing)"
+                        % (doc, line, target),
+                        "the document tells a reader to run something that is not there -- "
+                        "create it, fix the path, or delete the instruction"))
     for name, rel, line, exported, mention_only in g.dead_symbols:
         # LOW, and on purpose: a library's public API is legitimately uncalled inside the library,
         # and nothing in the syntax tells that apart from dead code. The item carries the evidence
