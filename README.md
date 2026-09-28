@@ -131,7 +131,7 @@ Eight stages, run individually or all at once:
 | # | stage | what it does |
 |---|---|---|
 | 1 | **SCAN** | discover every file and every population, with a denominator that comes from a second, independent count |
-| 2 | **GRAPH** | a dependency graph both ways — what breaks if this changes, and what breaks if this moves |
+| 2 | **GRAPH** | a dependency graph both ways — what breaks if this changes, what breaks if this moves, and where one job is defined in two places |
 | 3 | **ORGANIZE** | sort files into a tiered structure; index what must not move rather than moving it |
 | 4 | **RETRIEVE** | build an offline retrieval layer so the system can answer questions about itself — and audit that layer, because a retriever that returns nothing looks like a system with nothing in it |
 | 5 | **HARNESS** | separate the system into subsystems and flag any with no gate, check or test guarding it |
@@ -163,8 +163,6 @@ named plainly rather than left to look covered:
 
 - **Symbol-level dead code** — a function that is exported but never *called*. File-level orphans
   are caught; symbol-level ones are not.
-- **Duplicate definitions** — the same symbol defined in two files, where fixing one leaves the
-  other stale.
 - **Test-shape rot** — a test that asserts nothing, swallows its own exception, or is permanently
   skipped.
 - **Config rot** — a config key nothing reads, or an environment variable referenced but set
@@ -294,7 +292,7 @@ Exit `0` clean · `1` found something · `2` could-not-tell (never treat as clea
   `ragghost_plugin_*` module exposing `CHECKS = [fn]`. A plugin that raises is reported and skipped,
   never silently dropping the run to a clean result.
 
-Codes: `SCAN-DRIFT` · `GRAPH-ORPHAN` · `GRAPH-DANGLING` · `ORG-MISFILED` · `HARNESS-NOGATE` · `RETR-BLIND`.
+Codes: `SCAN-DRIFT` · `GRAPH-ORPHAN` · `GRAPH-DANGLING` · `GRAPH-DUPLICATE` · `ORG-MISFILED` · `HARNESS-NOGATE` · `RETR-BLIND`.
 
 This repository holds itself to its own standard: `python3 -m ragghost check .` exits `0`. A
 `.ragghost.json` and two inline `# ragghost: allow` comments scope out three known false positives,
@@ -332,7 +330,7 @@ found by running the tool on itself rather than by reading it.
 | stage | state |
 |---|---|
 | 1 SCAN | **working** — discovers files, classifies them, counts two independent ways, reports drift |
-| 2 GRAPH | **working** — dependency graph both directions; dangling refs and orphans |
+| 2 GRAPH | **working** — dependency graph both directions; dangling refs, orphans, and duplicate definitions |
 | 3 ORGANIZE | **working** — tiered index; what is load-bearing vs movable; misfiled files |
 | 4 RETRIEVE | **working** — offline tf-idf index; audits itself with a present probe and a noise probe |
 | 5 HARNESS | **working** — splits into subsystems; flags any with no gate |

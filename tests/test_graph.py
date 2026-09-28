@@ -138,6 +138,75 @@ class GraphTest(unittest.TestCase):
         g = build_graph(self.d)
         self.assertEqual(g.dangling, [])
 
+    # ---- DUPLICATE DEFINITIONS: must fire ----
+    def test_a_literal_copy_of_a_helper_is_found(self):
+        body = "import os\ndef slurp(p):\n    return open(p, encoding='utf-8').read()\n"
+        build(self.d, {"a/__init__.py": "", "a/one.py": body, "a/two.py": body})
+        names = {n for n, _k, _f, _m in build_graph(self.d).duplicates}
+        self.assertIn("slurp", names)
+
+    def test_a_drifted_copy_of_one_job_is_found(self):
+        # the dangerous half: the same job, computed two ways, so the two no longer agree
+        build(self.d, {
+            "pricing/__init__.py": "",
+            "pricing/discount.py": "def apply_discount(price, pct):\n"
+                                   "    return price * (1 - pct/100.0)\n",
+            "promo/__init__.py": "",
+            "promo/discount.py": "def apply_discount(price, pct):\n"
+                                 "    return price - price*pct/100.0\n",
+        })
+        found = [d for d in build_graph(self.d).duplicates if d[0] == "apply_discount"]
+        self.assertEqual(len(found), 1, "one finding, not one per pair")
+        self.assertEqual(found[0][3], "same-job")
+        self.assertEqual(found[0][2], ["pricing/discount.py", "promo/discount.py"])
+
+    def test_the_finding_names_only_the_files_that_actually_match(self):
+        # three files share the name; only two share the code. Naming all three would send the
+        # reader to a file that is not part of the defect.
+        same = "def handle(req):\n    return req.body\n"
+        build(self.d, {
+            "s/__init__.py": "", "s/a.py": same, "s/b.py": same,
+            "s/c.py": "def handle(req):\n    return {'other': req.headers}\n",
+        })
+        found = [d for d in build_graph(self.d).duplicates if d[0] == "handle"]
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0][2], ["s/a.py", "s/b.py"])
+
+    # ---- DUPLICATE DEFINITIONS: must stay quiet ----
+    def test_an_interface_implemented_per_module_is_not_a_duplicate(self):
+        # the same name and signature, deliberately, so a registry can call them uniformly. The
+        # bodies name different things, which is what separates an interface from a copy.
+        build(self.d, {
+            "p/__init__.py": "",
+            "p/alpha.py": "def raw_findings(root):\n    return scan_alpha(root, depth=2)\n",
+            "p/beta.py": "def raw_findings(root):\n    return parse_beta(root).results\n",
+        })
+        self.assertEqual(build_graph(self.d).duplicates, [])
+
+    def test_a_conventional_entry_point_is_not_a_duplicate(self):
+        build(self.d, {
+            "q/__init__.py": "",
+            "q/one.py": "def main(argv=None):\n    return run_one(argv)\n",
+            "q/two.py": "def main(argv=None):\n    return serve_two(argv)\n",
+        })
+        self.assertEqual(build_graph(self.d).duplicates, [])
+
+    def test_a_repeated_helper_under_tests_is_not_a_duplicate(self):
+        body = "def helper(x):\n    return x + 1\n"
+        build(self.d, {"tests/test_a.py": body, "tests/test_b.py": body})
+        self.assertEqual(build_graph(self.d).duplicates, [])
+
+    def test_two_definitions_in_ONE_file_are_a_different_class(self):
+        # shadowing inside one file is real, and it is not what this detector reports
+        build(self.d, {"r/__init__.py": "",
+                       "r/only.py": "def f(a):\n    return a\ndef f(a):\n    return a\n"})
+        self.assertEqual(build_graph(self.d).duplicates, [])
+
+    def test_a_clean_tree_reports_no_duplicates(self):
+        build(self.d, {"c/__init__.py": "", "c/one.py": "def alpha(x):\n    return x*2\n",
+                       "c/two.py": "def beta(y):\n    return y-1\n"})
+        self.assertEqual(build_graph(self.d).duplicates, [])
+
     # ---- COULD NOT TELL ----
     def test_empty_tree_is_unknown(self):
         g = build_graph(self.d)

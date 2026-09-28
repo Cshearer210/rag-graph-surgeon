@@ -78,6 +78,13 @@ def plan(root):
     for n in g.orphans:
         p.items.append(("MEDIUM", "orphan", n,
                         "nothing depends on this file -- wire it in, or delete it if it is dead"))
+    for name, _kind, files, method in g.duplicates:
+        # HIGH, not CRITICAL: nothing is broken at this instant. It outranks an orphan because a
+        # stale second copy is found by whoever hits the bug that was already fixed -- later, and
+        # more expensively, than finding a file nobody calls.
+        p.items.append(("HIGH", "duplicate", "%s() in %s" % (name, ", ".join(files)),
+                        "one job defined in %d places (%s) -- fix one and the rest stay stale; "
+                        "keep one definition and have the others call it" % (len(files), method)))
 
     r = build_index(root)
     if r.audit_present is not None and not r.audit_present[2]:

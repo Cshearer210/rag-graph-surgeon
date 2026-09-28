@@ -2,7 +2,7 @@
 # FIRES WHEN: asked -- a library module of a standalone tool, run by whoever downloaded it.
 """STAGE 2 -- GRAPH. What is wired to what, in both directions.
 
-⛔ THE FAILURE THIS STAGE EXISTS FOR: two of the quietest ways a self-built system rots are
+⛔ THE FAILURE THIS STAGE EXISTS FOR: three of the quietest ways a self-built system rots are
 invisible without a dependency graph.
 
   1. A file is built, is correct, passes its own tests, and NOTHING imports it. It reads as
@@ -10,6 +10,9 @@ invisible without a dependency graph.
   2. A file is renamed or moved, and something that named it by path now points at nothing --
      but the reference is a string, so no import error fires and every dashboard stays green.
      (A DANGLING reference: a path named in text that no longer exists.)
+  3. One job is defined in two files. Both are correct on their own, both are reachable, and a bug
+     fixed in one of them is still live in the other -- found later by whoever hits the bug that
+     was already fixed. (A DUPLICATE definition: one job, several doors.)
 
 So this stage builds the graph two ways and asks the two questions a graph exists to answer:
 what breaks if this file CHANGES (its dependents), and what breaks if this file MOVES (the
@@ -39,6 +42,7 @@ class Graph:
         self.edges = {}                    # file -> set(files it depends on)
         self.rev = {}                      # file -> set(files that depend on it)
         self.dangling = []                 # (file, named_path) references that resolve to nothing
+        self.duplicates = []               # (name, kind, [files], method) one job, several doors
         self.unparsed = []                 # files we could not read/parse -> UNKNOWN, not "no edges"
         self.scanned_files = 0             # denominator, from stage 1
 
@@ -83,7 +87,7 @@ class Graph:
         """0 clean, 1 found something, 2 could-not-tell. A graph over nothing is UNKNOWN."""
         if not self.nodes:
             return 2
-        if self.dangling or self.orphans:
+        if self.dangling or self.orphans or self.duplicates:
             return 1
         return 0
 
@@ -115,12 +119,19 @@ class Graph:
               % len(self.dangling))
             for f, tgt in self.dangling[:12]:
                 w("    %s  ->  %s (missing)\n" % (f, tgt))
+        if self.duplicates:
+            w("\n  ⛔ %d SYMBOL(S) DEFINED IN TWO PLACES -- fix one and the other stays stale\n"
+              % len(self.duplicates))
+            for name, _kind, files, method in self.duplicates[:12]:
+                w("    %-22s [%s]\n" % (name, method))
+                for f in files:
+                    w("        %s\n" % f)
         if self.unparsed:
             w("\n  COULD NOT PARSE %d file(s) -- their edges are UNKNOWN, not absent\n"
               % len(self.unparsed))
             for p in self.unparsed[:5]:
                 w("    %s\n" % p)
-        if not self.orphans and not self.dangling:
+        if not self.orphans and not self.dangling and not self.duplicates:
             w("\n  Every file has a dependent or is a legitimate entry point, and every named\n"
               "  path resolves. Nothing hidden at the wiring layer.\n")
 
@@ -206,6 +217,126 @@ def _imports(pyfile_abs, rel=None):
                     if a.name != "*":
                         mods.add(".".join(p for p in (full, a.name) if p))
     return mods
+
+
+def _top_level_defs(pyfile_abs):
+    """Every MODULE-LEVEL function, as (name, params, identifiers, shape). None if unparsable.
+
+    Module-level only, deliberately. A method or a nested helper shares its name with every other
+    implementation of the same interface, so walking the whole tree would flag every class that
+    implements a protocol -- the crying-wolf this tool refuses.
+    """
+    try:
+        with open(pyfile_abs, encoding="utf-8", errors="replace") as f:
+            tree = ast.parse(f.read())
+    except (OSError, SyntaxError, ValueError):
+        return None
+    out = []
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        a = node.args
+        params = tuple(p.arg for p in list(a.posonlyargs) + list(a.args) + list(a.kwonlyargs))
+        idents = set()
+        for st in node.body:
+            for n in ast.walk(st):
+                if isinstance(n, ast.Name):
+                    idents.add(n.id)
+                elif isinstance(n, ast.Attribute):
+                    idents.add(n.attr)
+                elif isinstance(n, ast.arg):
+                    idents.add(n.arg)
+        shape = "|".join(ast.dump(st, annotate_fields=False) for st in node.body)
+        out.append((node.name, params, frozenset(idents), shape))
+    return out
+
+
+def _duplicate_definitions(g, skip):
+    """One job defined in two files, so a fix to one leaves the other stale.
+
+    ⛔ THE FAILURE: the same symbol is defined in two places, both are reachable, and a bug fixed
+    in one of them is still live in the other. Nothing errors, both files look correct on their
+    own, and the stale copy is found by whoever hits the bug that was already fixed.
+
+    TWO METHODS, and NEITHER USES A TUNED NUMBER -- a threshold picked to fit the cases in front
+    of you is a control that cannot fail:
+
+      identical-body  the two bodies have the same normalized AST. A literal copy.
+      same-job        the same non-empty signature AND exactly the same set of identifiers, with a
+                      DIFFERENT AST. One job computed two ways -- the drifted copy, which is the
+                      more dangerous half because the two no longer even agree on the answer.
+
+    ⚠ THE THRESHOLD WAS TRIED FIRST AND MEASURED, NOT ASSUMED. Scoring the bodies by token overlap
+    put the planted drifted copy at 0.75 and a legitimate per-builder `rubric()` at 0.69, so any
+    cutoff that caught the defect also flagged the convention -- a 0.06 margin is not a rule, it is
+    a coincidence. Identifier-set EQUALITY separates them with no cutoff at all.
+
+    WHAT IT DELIBERATELY LEAVES ALONE, measured across four real repositories: a conventional
+    `main()` (nothing in common but the name), an interface implemented per module
+    (`raw_findings`, `rubric` -- same signature, different identifiers), and anything under
+    tests/, examples/ or docs/, where a repeated helper is the normal shape.
+
+    Each finding names the ACTUAL PAIR of files, never the whole set that shares the name. A
+    finding that says "these four files" when only two of them match sends the reader to the
+    wrong place, which is how a true finding still wastes an afternoon.
+    """
+    defs = {}
+    for n in sorted(g.nodes):
+        if not n.endswith(".py"):
+            continue
+        base = os.path.basename(n)
+        if base.startswith("test_") or base == "conftest.py":
+            continue
+        if any(n.startswith(s) or ("/" + s) in n for s in ("tests/", "examples/", "docs/")):
+            continue
+        if any(part in skip for part in n.split("/")):
+            continue
+        got = _top_level_defs(os.path.join(g.root, n))
+        if got is None:
+            if n not in g.unparsed:
+                g.unparsed.append(n)        # UNKNOWN, never "this file defines nothing"
+            continue
+        for name, params, idents, shape in got:
+            defs.setdefault(name, []).append((n, params, idents, shape))
+
+    for name in sorted(defs):
+        hits = defs[name]
+        # Group the files that match EACH OTHER, rather than emitting one row per pair: four
+        # identical copies are one finding about four files, not six findings about pairs of them.
+        # Only files actually in the group are named -- where two of four match and the other two
+        # are a genuine per-module implementation, the finding names the two.
+        for method in ("identical-body", "same-job"):
+            parent = {}
+
+            def find(x):
+                while parent[x] != x:
+                    parent[x] = parent[parent[x]]
+                    x = parent[x]
+                return x
+
+            for h in hits:
+                parent.setdefault(h[0], h[0])
+            for i in range(len(hits)):
+                for j in range(i + 1, len(hits)):
+                    a, b = hits[i], hits[j]
+                    if a[0] == b[0]:
+                        continue            # two defs of one name in ONE file is a different class
+                    if method == "identical-body":
+                        same = bool(a[3]) and a[3] == b[3]
+                    else:
+                        # a drifted copy: same job, different code. An identical body is already
+                        # reported by the other method and must not be counted twice.
+                        same = bool(a[1]) and a[1] == b[1] and a[2] == b[2] and a[3] != b[3]
+                    if same:
+                        ra, rb = find(a[0]), find(b[0])
+                        if ra != rb:
+                            parent[ra] = rb
+            groups = {}
+            for f in parent:
+                groups.setdefault(find(f), set()).add(f)
+            for members in groups.values():
+                if len(members) > 1:
+                    g.duplicates.append((name, "func", sorted(members), method))
 
 
 def _from_targets(pyfile_abs):
@@ -387,4 +518,5 @@ def build_graph(root, skip=VENDORED):
                     g.rev[target].add(n)
     _dangling_refs(g, set(skip))
     _broken_submodule_refs(g)
+    _duplicate_definitions(g, set(skip))
     return g

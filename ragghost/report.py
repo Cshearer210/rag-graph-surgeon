@@ -29,6 +29,7 @@ KIND_TO_CODE = {
     "scan": "SCAN-DRIFT",
     "moved-ref": "GRAPH-DANGLING",
     "orphan": "GRAPH-ORPHAN",
+    "duplicate": "GRAPH-DUPLICATE",
     "retrieval": "RETR-BLIND",
     "no-gate": "HARNESS-NOGATE",
     "misfiled": "ORG-MISFILED",
