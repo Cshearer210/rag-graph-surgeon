@@ -74,7 +74,13 @@ def build(root: str, max_bytes: int = 400_000) -> Index:
             if f.startswith("."):
                 continue
             full = os.path.join(dp, f)
-            rel = os.path.relpath(full, root)
+            # ⛔ FORWARD SLASHES, BECAUSE THIS IS AN IDENTITY AND NOT A DISPLAY STRING. It
+            # goes into idx.files and becomes a bucket KEY, both of which are compared against
+            # paths produced by other stages. On Windows a backslashed spelling of the same file
+            # compares unequal to a forward-slashed one, so one file reads as two and a duplicate
+            # or a dead symbol is missed -- the class that already cost a sibling repo three
+            # commits in one morning.
+            rel = os.path.relpath(full, root).replace(os.sep, "/")
             idx.files.append(rel)
             k = bucket(rel)
             idx.buckets.setdefault(k, []).append(rel)
