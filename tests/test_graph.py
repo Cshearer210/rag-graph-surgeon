@@ -207,6 +207,67 @@ class GraphTest(unittest.TestCase):
                        "c/two.py": "def beta(y):\n    return y-1\n"})
         self.assertEqual(build_graph(self.d).duplicates, [])
 
+    # ---- DEAD SYMBOLS: must fire ----
+    def test_an_exported_symbol_nothing_calls_is_found(self):
+        # the file IS imported, so the file-level orphan check cannot see this
+        build(self.d, {
+            "util/__init__.py": "from util.textutil import normalize_ph\n",
+            "util/textutil.py": "__all__ = ['normalize_ph']\ndef normalize_ph(x):\n"
+                                "    return round(x, 2)\n",
+            "app.py": "import util\nprint(util)\n",
+        })
+        found = {n for n, _f, _l, _e, _m in build_graph(self.d).dead_symbols}
+        self.assertIn("normalize_ph", found)
+
+    def test_a_mention_in_a_comment_or_a_string_is_not_a_use(self):
+        # grep says used; the syntax says nothing names it. That gap is the whole finding.
+        build(self.d, {
+            "util/__init__.py": "from util.textutil import normalize_ph\n",
+            "util/textutil.py": "__all__ = ['normalize_ph']\ndef normalize_ph(x):\n    return x\n",
+            "util/notes.py": "# TODO: maybe use normalize_ph here someday\n"
+                             "HINT = 'call normalize_ph for rounding'\n",
+            "app.py": "import util\nprint(util)\n",
+        })
+        hits = [h for h in build_graph(self.d).dead_symbols if h[0] == "normalize_ph"]
+        self.assertEqual(len(hits), 1)
+        self.assertTrue(hits[0][3], "it is exported, and the finding must say so")
+        self.assertEqual(hits[0][4], ["util/notes.py"])
+
+    # ---- DEAD SYMBOLS: must stay quiet ----
+    def test_a_symbol_passed_as_a_value_is_not_dead(self):
+        # a registry never CALLS its entries at the point it names them, and flagging a wired
+        # builder would be the crying-wolf this tool refuses
+        build(self.d, {
+            "reg/__init__.py": "from reg import impl\nBUILDERS = {'a': impl.build}\n",
+            "reg/impl.py": "def build(x):\n    return x\n",
+            "app.py": "import reg\nprint(reg)\n",
+        })
+        self.assertEqual(build_graph(self.d).dead_symbols, [])
+
+    def test_a_symbol_in_a_file_already_reported_as_an_orphan_is_not_reported_twice(self):
+        build(self.d, {"lonely.py": "def nobody(x):\n    return x\n",
+                       "app/__init__.py": "", "app/main.py": "X = 1\n"})
+        g = build_graph(self.d)
+        self.assertIn("lonely.py", g.orphans)
+        self.assertEqual(g.dead_symbols, [])
+
+    def test_a_decorated_symbol_is_not_dead(self):
+        build(self.d, {"p/__init__.py": "from p import h\nprint(h)\n",
+                       "p/h.py": "import functools\n\n\n@functools.cache\ndef helper(x):\n"
+                                 "    return x\n"})
+        self.assertEqual(build_graph(self.d).dead_symbols, [])
+
+    def test_a_test_function_is_not_dead(self):
+        build(self.d, {"tests/test_it.py": "def test_thing():\n    assert 1\n",
+                       "app/__init__.py": "", "app/main.py": "X = 1\n"})
+        self.assertEqual(build_graph(self.d).dead_symbols, [])
+
+    def test_a_called_symbol_is_not_dead(self):
+        build(self.d, {"m/__init__.py": "", "m/lib.py": "def go(x):\n    return x\n",
+                       "m/use.py": "from m.lib import go\n\n\ndef run():\n    return go(1)\n"})
+        found = {n for n, _f, _l, _e, _m in build_graph(self.d).dead_symbols}
+        self.assertNotIn("go", found)
+
     # ---- COULD NOT TELL ----
     def test_empty_tree_is_unknown(self):
         g = build_graph(self.d)

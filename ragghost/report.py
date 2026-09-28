@@ -30,6 +30,7 @@ KIND_TO_CODE = {
     "moved-ref": "GRAPH-DANGLING",
     "orphan": "GRAPH-ORPHAN",
     "duplicate": "GRAPH-DUPLICATE",
+    "dead-symbol": "GRAPH-DEADSYM",
     "retrieval": "RETR-BLIND",
     "no-gate": "HARNESS-NOGATE",
     "misfiled": "ORG-MISFILED",

@@ -86,6 +86,18 @@ def plan(root):
                         "one job defined in %d places (%s) -- fix one and the rest stay stale; "
                         "keep one definition and have the others call it" % (len(files), method)))
 
+    for name, rel, line, exported, mention_only in g.dead_symbols:
+        # LOW, and on purpose: a library's public API is legitimately uncalled inside the library,
+        # and nothing in the syntax tells that apart from dead code. The item carries the evidence
+        # -- exported or not, and where the name is merely MENTIONED -- so the reader rules on it.
+        why = "no code anywhere names it"
+        if mention_only:
+            why += "; it appears only in a comment or a string in %s, so grep calls it used" \
+                   % ", ".join(mention_only[:3])
+        p.items.append(("LOW", "dead-symbol", "%s() at %s:%d%s"
+                        % (name, rel, line, " (exported)" if exported else ""),
+                        "%s -- call it, or delete it" % why))
+
     r = build_index(root)
     if r.audit_present is not None and not r.audit_present[2]:
         p.items.append(("CRITICAL", "retrieval", "present probe %r not found" % r.audit_present[0],

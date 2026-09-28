@@ -43,6 +43,7 @@ class Graph:
         self.rev = {}                      # file -> set(files that depend on it)
         self.dangling = []                 # (file, named_path) references that resolve to nothing
         self.duplicates = []               # (name, kind, [files], method) one job, several doors
+        self.dead_symbols = []             # (name, file, line, exported, [mention-only files])
         self.unparsed = []                 # files we could not read/parse -> UNKNOWN, not "no edges"
         self.scanned_files = 0             # denominator, from stage 1
 
@@ -87,7 +88,7 @@ class Graph:
         """0 clean, 1 found something, 2 could-not-tell. A graph over nothing is UNKNOWN."""
         if not self.nodes:
             return 2
-        if self.dangling or self.orphans or self.duplicates:
+        if self.dangling or self.orphans or self.duplicates or self.dead_symbols:
             return 1
         return 0
 
@@ -126,12 +127,21 @@ class Graph:
                 w("    %-22s [%s]\n" % (name, method))
                 for f in files:
                     w("        %s\n" % f)
+        if self.dead_symbols:
+            w("\n  %d SYMBOL(S) NO CODE ANYWHERE NAMES -- a wired file, a symbol with no caller\n"
+              % len(self.dead_symbols))
+            for name, rel, line, exported, ment in self.dead_symbols[:12]:
+                w("    %-22s %s:%d%s\n"
+                  % (name, rel, line, "  (exported)" if exported else ""))
+                if ment:
+                    w("        only MENTIONED, never used, in: %s\n" % ", ".join(ment[:4]))
         if self.unparsed:
             w("\n  COULD NOT PARSE %d file(s) -- their edges are UNKNOWN, not absent\n"
               % len(self.unparsed))
             for p in self.unparsed[:5]:
                 w("    %s\n" % p)
-        if not self.orphans and not self.dangling and not self.duplicates:
+        if not self.orphans and not self.dangling and not self.duplicates \
+                and not self.dead_symbols:
             w("\n  Every file has a dependent or is a legitimate entry point, and every named\n"
               "  path resolves. Nothing hidden at the wiring layer.\n")
 
@@ -339,6 +349,111 @@ def _duplicate_definitions(g, skip):
                     g.duplicates.append((name, "func", sorted(members), method))
 
 
+_WORDISH = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+_COMMENT = re.compile(r"#(.*)$", re.M)
+
+
+def _symbol_facts(pyfile_abs):
+    """(defs, refs, mentions, exported) for one file, or None if it cannot be parsed.
+
+    ⭐ THE DISTINCTION THE WHOLE CHECK RESTS ON, and it is free: a name inside a COMMENT or a
+    STRING LITERAL does not appear in the AST at all. So building the reference set from the
+    syntax separates a USE from a MENTION without a single special case -- which is exactly the
+    difference `grep` cannot see and why grep reports a name as used when nothing calls it.
+
+    An `__all__` entry is a string too, so EXPORTING a name is a promise about it, never a use
+    of it.
+    """
+    try:
+        with open(pyfile_abs, encoding="utf-8", errors="replace") as f:
+            src = f.read()
+        tree = ast.parse(src)
+    except (OSError, SyntaxError, ValueError):
+        return None
+    exported = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
+            if isinstance(node.value, (ast.List, ast.Tuple)):
+                exported |= {el.value for el in node.value.elts
+                             if isinstance(el, ast.Constant) and isinstance(el.value, str)}
+    defs = [(n.name, n.lineno, bool(n.decorator_list)) for n in tree.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+    refs, mentions = set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            refs.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            refs.add(node.attr)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            mentions |= set(_WORDISH.findall(node.value))
+    for m in _COMMENT.finditer(src):
+        mentions |= set(_WORDISH.findall(m.group(1)))
+    return defs, refs, mentions, exported
+
+
+def _dead_symbols(g, skip):
+    """A symbol that is defined, often exported, and referenced by no code anywhere.
+
+    ⛔ THE FAILURE: stage 2's orphan check works at FILE level, so a dead symbol inside a file
+    that IS imported is invisible to it. The file is wired, the module loads, the export is
+    declared -- and the function it names has no caller. Worse, `grep` says it is used, because
+    somebody wrote its name in a TODO or a hint string years ago.
+
+    ⚠ IT REPORTS, IT DOES NOT RULE, AND THAT IS DELIBERATE. A library's public API is legitimately
+    uncalled inside the library, and nothing in the syntax distinguishes that from dead code --
+    measured on two real repositories, where the only findings were an exported gate the README
+    documents and an exported helper meant for callers outside the package. So the finding is LOW
+    severity, it carries the evidence a reader needs (whether the name is exported, and which
+    files merely MENTION it), and it has its own code so a library can ignore the whole class in
+    its config. Pretending the tool can tell an API from a corpse would be the over-firing this
+    tool refuses.
+
+    A symbol in a file that is ALREADY reported as an orphan is skipped -- the file-level finding
+    says more, and saying both would be the same defect counted twice.
+    """
+    orphan_files = set(g.orphans)
+    per_file, all_refs = {}, set()
+    for n in sorted(g.nodes):
+        if not n.endswith(".py"):
+            continue
+        if any(part in skip for part in n.split("/")):
+            continue
+        got = _symbol_facts(os.path.join(g.root, n))
+        if got is None:
+            if n not in g.unparsed:
+                g.unparsed.append(n)     # UNKNOWN: never "this file references nothing"
+            continue
+        per_file[n] = got
+        all_refs |= got[1]
+
+    defined_in = {}
+    for n, (defs, _r, _m, _e) in per_file.items():
+        for name, lineno, decorated in defs:
+            defined_in.setdefault(name, []).append((n, lineno, decorated))
+
+    for name in sorted(defined_in):
+        sites = defined_in[name]
+        if len(sites) != 1:
+            continue                     # more than one definition is the duplicate class
+        rel, lineno, decorated = sites[0]
+        if name.startswith("__") or decorated:
+            continue                     # a dunder, or a decorator is its caller
+        base = os.path.basename(rel)
+        if base.startswith("test_") or base == "conftest.py":
+            continue
+        if any(rel.startswith(s) or ("/" + s) in rel for s in ("tests/", "examples/", "docs/")):
+            continue
+        if rel in orphan_files:
+            continue                     # the whole file is already reported
+        if name in all_refs:
+            continue                     # real code names it somewhere
+        exported = name in per_file[rel][3]
+        mention_only = sorted(f for f, (_d, _r, mentions, _e) in per_file.items()
+                              if f != rel and name in mentions)
+        g.dead_symbols.append((name, rel, lineno, exported, mention_only))
+
+
 def _from_targets(pyfile_abs):
     """Level-0 `from M import n` pairs (M, n), for spotting a submodule that has gone missing.
     None if the file cannot be parsed -- its references are UNKNOWN, never assumed present."""
@@ -519,4 +634,5 @@ def build_graph(root, skip=VENDORED):
     _dangling_refs(g, set(skip))
     _broken_submodule_refs(g)
     _duplicate_definitions(g, set(skip))
+    _dead_symbols(g, set(skip))
     return g
