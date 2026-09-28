@@ -132,7 +132,7 @@ Eight stages, run individually or all at once:
 |---|---|---|
 | 1 | **SCAN** | discover every file and every population, with a denominator that comes from a second, independent count |
 | 2 | **GRAPH** | a dependency graph both ways — what breaks if this changes, what breaks if this moves, and where one job is defined in two places |
-| 3 | **ORGANIZE** | sort files into a tiered structure; index what must not move rather than moving it |
+| 3 | **ORGANIZE** | sort files into a tiered structure; index what must not move rather than moving it; flag a subsystem that was declared and never built |
 | 4 | **RETRIEVE** | build an offline retrieval layer so the system can answer questions about itself — and audit that layer, because a retriever that returns nothing looks like a system with nothing in it |
 | 5 | **HARNESS** | separate the system into subsystems and flag any with no gate, check or test guarding it |
 | 6 | **PLAN** | generate a harm-ranked plan of what to do, built from the real findings of stages 1–5 |
@@ -292,7 +292,7 @@ Exit `0` clean · `1` found something · `2` could-not-tell (never treat as clea
   `ragghost_plugin_*` module exposing `CHECKS = [fn]`. A plugin that raises is reported and skipped,
   never silently dropping the run to a clean result.
 
-Codes: `SCAN-DRIFT` · `GRAPH-ORPHAN` · `GRAPH-DANGLING` · `GRAPH-DUPLICATE` · `ORG-MISFILED` · `HARNESS-NOGATE` · `RETR-BLIND`.
+Codes: `SCAN-DRIFT` · `GRAPH-ORPHAN` · `GRAPH-DANGLING` · `GRAPH-DUPLICATE` · `ORG-MISFILED` · `ORG-HOLLOW` · `HARNESS-NOGATE` · `RETR-BLIND`.
 
 This repository holds itself to its own standard: `python3 -m ragghost check .` exits `0`. A
 `.ragghost.json` and two inline `# ragghost: allow` comments scope out three known false positives,
@@ -331,7 +331,7 @@ found by running the tool on itself rather than by reading it.
 |---|---|
 | 1 SCAN | **working** — discovers files, classifies them, counts two independent ways, reports drift |
 | 2 GRAPH | **working** — dependency graph both directions; dangling refs, orphans, and duplicate definitions |
-| 3 ORGANIZE | **working** — tiered index; what is load-bearing vs movable; misfiled files |
+| 3 ORGANIZE | **working** — tiered index; what is load-bearing vs movable; misfiled files; hollow subsystems |
 | 4 RETRIEVE | **working** — offline tf-idf index; audits itself with a present probe and a noise probe |
 | 5 HARNESS | **working** — splits into subsystems; flags any with no gate |
 | 6 PLAN | **working** — a harm-ranked plan built from the real findings of stages 1–5 |

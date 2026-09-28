@@ -100,6 +100,12 @@ def plan(root):
                         "a code subsystem no test guards -- add a gate before trusting it"))
 
     idx = organize(root)
+    for d, why in idx.hollow:
+        # HIGH because it is an UNKNOWN wearing a clean report: nothing is broken, nothing is
+        # missing, and nobody can say whether this subsystem's job is being done at all.
+        p.items.append(("HIGH", "hollow", d, "a declared subsystem with no code in it -- "
+                                             "build it, or delete the scaffold so it stops "
+                                             "reading as a working part of the system"))
     for f, why in idx.misfiled:
         p.items.append(("LOW", "misfiled", "%s (%s)" % (f, why),
                         "move it to where its kind belongs -- low risk, nothing references it"))

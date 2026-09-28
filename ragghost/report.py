@@ -33,6 +33,7 @@ KIND_TO_CODE = {
     "retrieval": "RETR-BLIND",
     "no-gate": "HARNESS-NOGATE",
     "misfiled": "ORG-MISFILED",
+    "hollow": "ORG-HOLLOW",
 }
 _SEV_SARIF = {"CRITICAL": "error", "HIGH": "error", "MEDIUM": "warning", "LOW": "note"}
 _PATH_RE = re.compile(r"([\w./\-]+\.[A-Za-z0-9]{1,6})")

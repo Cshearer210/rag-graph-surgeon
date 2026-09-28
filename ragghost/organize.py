@@ -16,6 +16,7 @@ No dependencies, no network. It reads; it never writes to the target.
 """
 from __future__ import annotations
 
+import ast
 import os
 import sys
 
@@ -54,12 +55,13 @@ class Index:
         self.pinned = {}           # file -> [things that depend on it]  (must not move)
         self.movable = []          # files nothing references -> safe to reorganise
         self.misfiled = []         # (file, why) -- a clear, low-risk organisation fix
+        self.hollow = []           # (package, why) -- declared subsystem holding nothing
         self.total = 0
 
     def exit_code(self):
         if not self.total:
             return 2                       # nothing to index -> UNKNOWN, never clean
-        if self.misfiled:
+        if self.misfiled or self.hollow:
             return 1
         return 0
 
@@ -82,12 +84,72 @@ class Index:
         for f, deps in sorted(self.pinned.items(), key=lambda kv: -len(kv[1]))[:8]:
             w("    %-52s %d dependent(s)\n" % (f[:52], len(deps)))
         w("\n  SAFE TO REORGANISE -- %d file(s) nothing references\n" % len(self.movable))
+        if self.hollow:
+            w("\n  ⛔ %d DECLARED SUBSYSTEM(S) WITH NOTHING IN THEM -- UNKNOWN, not clean\n"
+              % len(self.hollow))
+            for d, why in self.hollow[:12]:
+                w("    %-52s %s\n" % (d[:52], why))
         if self.misfiled:
             w("\n  ⛔ %d FILE(S) CLEARLY MISFILED -- a low-risk tidy\n" % len(self.misfiled))
             for f, why in self.misfiled[:12]:
                 w("    %-52s %s\n" % (f[:52], why))
         else:
             w("\n  No file is clearly misfiled.\n")
+
+
+def _is_empty_module(abs_path):
+    """True when a Python file declares NOTHING -- no definition, no import, no assignment.
+
+    A docstring alone still counts as empty: a package that describes itself and contains no code
+    is exactly the shape this looks for. Unparseable means UNKNOWN, so it is NOT called empty.
+    """
+    try:
+        with open(abs_path, encoding="utf-8", errors="replace") as f:
+            tree = ast.parse(f.read())
+    except (OSError, SyntaxError, ValueError):
+        return False                      # could not read it -> never claim it is empty
+    for node in tree.body:
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) \
+                and isinstance(node.value.value, str):
+            continue                      # a docstring is not content
+        if isinstance(node, ast.Pass):
+            continue
+        return False
+    return True
+
+
+def _hollow_packages(nodes, root):
+    """Directories that DECLARE a Python package and hold no code at all.
+
+    ⛔ THE FAILURE: a subsystem is scaffolded -- the folder and its `__init__.py` are created, the
+    work is never done, and from then on it reads as FINE in every report. Nothing is broken,
+    nothing is missing, no import fails. The honest verdict is not "clean", it is UNKNOWN: the
+    subsystem was declared and nobody can say whether its job is being done, because there is
+    nothing there to do it.
+
+    ⚠ KEPT NARROW ON PURPOSE, because a package that holds only an `__init__.py` is often
+    perfectly legitimate. All three must hold before it is reported: the package declares itself
+    with an `__init__.py`, that file declares nothing (a docstring does not count), and there is
+    no other module or subpackage under it. A re-exporting `__init__.py`, a namespace package with
+    submodules, and a test package are all left alone.
+    """
+    out = []
+    pkgs = sorted(n for n in nodes if n.endswith("/__init__.py"))
+    for init in pkgs:
+        pkg = init[:-len("/__init__.py")]
+        if pkg.startswith("tests/") or pkg == "tests" or "/tests/" in ("/" + pkg + "/"):
+            continue
+        if pkg.startswith("examples/") or "/examples/" in ("/" + pkg + "/"):
+            continue
+        others = [n for n in nodes
+                  if n.startswith(pkg + "/") and n != init and n.endswith(".py")]
+        if others:
+            continue                      # it has modules or subpackages -- a real package
+        if not _is_empty_module(os.path.join(root, init)):
+            continue                      # its __init__ does the work -- also a real package
+        out.append((pkg + "/", "declared as a subsystem and holds no code -- never built, or its "
+                               "code lives somewhere else. UNKNOWN, not clean"))
+    return out
 
 
 def organize(root):
@@ -111,4 +173,5 @@ def organize(root):
         if base.startswith("test_") and base.endswith(".py") \
                 and "/tests/" not in ("/" + n) and not n.startswith("tests/"):
             idx.misfiled.append((n, "a test file outside any tests/ directory"))
+    idx.hollow = _hollow_packages(g.nodes, g.root)
     return idx
