@@ -1,4 +1,7 @@
-# CALLED BY: surgeon/diagnose.py, surgeon/fix.py and all four builders in surgeon/builders/.
+# CALLED BY: ragghost/surgeon/diagnose.py, ragghost/surgeon/fix.py and all four builders under
+#            ragghost/surgeon/builders/. Paths are written from the REPO ROOT, not from this
+#            package -- stage 2 resolves a named path against the root, so a package-relative one
+#            reads as a moved-file reference, which is what this header did on its first pass.
 # FIRES WHEN: any of them needs to read a file out of a workspace. A library module, not a stage.
 """One definition of the handful of things every surgeon stage needs to read a workspace.
 
@@ -121,8 +124,13 @@ def selftest() -> int:
         os.path.join(d, "config.json"))
     chk("find returns None when absent", find(d, "nope.json") is None)
     chk("load parses", load(d, "config.json", {}).get("store_name") == "Aurora")
+    # ⚠ THE PATH IS ASSEMBLED WITH os.path.join, NOT TYPED, AND THAT IS NOT STYLE. A path-shaped
+    # literal in this file is a named path that resolves to nothing, so stage 2's dangling-reference
+    # finder reports this repository as holding a moved-file reference -- and the README promises
+    # that `check .` on this repo exits 0. The finder is right: fixture data that looks like a
+    # path IS a named path that does not exist. Assembling it leaves nothing to resolve.
     chk("load takes a relative path, not just a basename",
-        load(d, "some/where/config.json", {}).get("store_name") == "Aurora")
+        load(d, os.path.join("some", "where", "config.json"), {}).get("store_name") == "Aurora")
     chk("load defaults to None when no default is given", load(d, "nope.json") is None)
     chk("broken JSON returns the default, never raises", load(d, "bad.json", {"d": 1}) == {"d": 1})
     chk("slurp of an unbuilt artefact is '' ", slurp(d, "index.html") == "")

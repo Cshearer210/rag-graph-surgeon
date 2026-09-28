@@ -359,7 +359,7 @@ would be a poor place to start.
 ## Verify it yourself
 
 ```bash
-python3 -m pytest -q tests           # 445 tests, standard library only + pytest as the runner
+python3 -m pytest -q tests           # 460 tests, standard library only + pytest as the runner
 python3 examples/run_all.py          # every example, which CI also runs
 python3 tools/readme_runs.py --tests # and every command ON THIS PAGE, with its documented exit code
 python3 -m ragghost demo             # all eight stages against a live, self-built broken system
