@@ -24,6 +24,17 @@ never "clean".**
 Every line on screen is the real output of a command that really ran, with its real exit code.
 [Full quality MP4](assets/demo.mp4).
 
+**489 tests pass** — measured 2026-10-04, and reproducible by anyone in about two seconds:
+
+```bash
+python3 -m pytest -q        # 489 passed
+ragghost doctor             # 6 checks, and it exits non-zero if any of them is untrue
+```
+
+That number is checked against the real suite rather than trusted: if the count here and the count
+the suite reports ever disagree, the pre-ship gate refuses the push. A test count written into a
+README has no expiry on its face, so it outlives what it measured and still reads as evidence.
+
 Most tools that audit a codebase answer *"is this file OK?"*. This one asks the opposite question —
 *"does everything this system promises, points at, or schedules actually exist and fire?"* — because
 that is where the failures that survive for months live.
