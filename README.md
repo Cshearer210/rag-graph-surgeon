@@ -3,6 +3,7 @@
 **Point it at a broken system: it finds what is actually wrong, repairs an isolated copy, and ships the output you wanted.**
 
 [![CI](https://github.com/Cshearer210/rag-graph-surgeon/actions/workflows/ci.yml/badge.svg)](https://github.com/Cshearer210/rag-graph-surgeon/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/rag-graph-surgeon.svg)](https://pypi.org/project/rag-graph-surgeon/)
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 ![dependencies: none](https://img.shields.io/badge/dependencies-none-brightgreen)
@@ -211,7 +212,7 @@ See the honest per-stage *Status* table near the bottom for what is built and wo
 library, and it never reaches out over the network for anything.
 
 ```bash
-pip install git+https://github.com/Cshearer210/rag-graph-surgeon
+pip install rag-graph-surgeon
 
 ragghost doctor                      # verify THIS install actually works, before trusting it
 ragghost demo                        # the 15-second tour (self-contained)
